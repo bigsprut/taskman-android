@@ -29,6 +29,8 @@ kotlinxCoroutines = "1.11.0"
 markdownParser = "0.7.18"
 # Coil 3: превью картинок вложений (Apache-2.0), сетевой движок — OkHttp
 coil = "3.6.3"
+# WorkManager: офлайн-очередь мутаций (Apache-2.0, ТЗ §5.1)
+work = "2.12.0"
 
 # --- Тесты ---
 junit = "4.13.2"
@@ -68,6 +70,7 @@ kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutine
 markdown-parser = { module = "org.jetbrains:markdown", version.ref = "markdownParser" }
 coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil" }
 coil-network-okhttp = { module = "io.coil-kt.coil3:coil-network-okhttp", version.ref = "coil" }
+androidx-work-runtime-ktx = { module = "androidx.work:work-runtime-ktx", version.ref = "work" }
 
 junit = { module = "junit:junit", version.ref = "junit" }
 androidx-test-ext-junit = { module = "androidx.test.ext:junit", version.ref = "androidxTestExtJunit" }

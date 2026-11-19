@@ -5,6 +5,8 @@
     <!-- Только сеть: ACCESS_NETWORK_STATE не запрашиваем, пока ConnectivityManager не
          используется (наименьшие привилегии, ТЗ §7). Ф4 вернёт его вместе с офлайн-очередью. -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- С Ф4: слушаем возвращение сети, чтобы очередь уходила сразу (ответ на Q4 в Ф0). -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <application
         android:name=".TaskmanApp"

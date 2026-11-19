@@ -8,11 +8,15 @@ import io.github.bigsprut.taskman.data.attachments.ContentResolverFileSource
 import io.github.bigsprut.taskman.data.local.TaskmanDatabase
 import io.github.bigsprut.taskman.data.remote.ConnectionHolder
 import io.github.bigsprut.taskman.data.remote.NetworkFactory
+import io.github.bigsprut.taskman.data.repo.DatabaseLocalTaskWriter
 import io.github.bigsprut.taskman.data.repo.DatabaseStateStore
+import io.github.bigsprut.taskman.data.repo.LocalTaskWriter
+import io.github.bigsprut.taskman.data.repo.OfflineMutationQueue
 import io.github.bigsprut.taskman.data.repo.EmployeeRepository
 import io.github.bigsprut.taskman.data.repo.StateStore
 import io.github.bigsprut.taskman.data.repo.TaskMutationRepository
 import io.github.bigsprut.taskman.data.repo.TaskRepository
+import io.github.bigsprut.taskman.data.sync.SyncScheduler
 import io.github.bigsprut.taskman.data.settings.AndroidKeystoreTokenCodec
 import io.github.bigsprut.taskman.data.settings.ConnectionRepository
 import io.github.bigsprut.taskman.data.settings.SettingsStore
@@ -54,19 +58,38 @@ class AppContainer(context: Context) {
 
     private val database: TaskmanDatabase by lazy { TaskmanDatabase.build(applicationContext) }
 
+    /** Планировщик фоновой синхронизации: очередь мутаций и периодический refresh (Ф4). */
+    val syncScheduler by lazy { SyncScheduler(applicationContext) }
+
+    /** Очередь неотправленных мутаций (Ф4). */
+    val offlineQueue: OfflineMutationQueue by lazy {
+        OfflineMutationQueue(database.pendingMutationDao())
+    }
+
+    private val localTaskWriter: LocalTaskWriter by lazy { DatabaseLocalTaskWriter(database) }
+
     /** Room-хранилище снапшота; оно же читает полную сущность задачи для мутаций (CAS-payload). */
     private val databaseStateStore: DatabaseStateStore by lazy { DatabaseStateStore(database) }
 
     /** Каталоги (теги/категории) для чипов фильтра. */
     val catalogStore: StateStore by lazy { databaseStateStore }
 
-    val taskRepository: TaskRepository by lazy { TaskRepository(network.api, databaseStateStore) }
+    val taskRepository: TaskRepository by lazy {
+        TaskRepository(
+            api = network.api,
+            stateStore = databaseStateStore,
+            offlineQueue = offlineQueue,
+        )
+    }
 
     val taskMutationRepository: TaskMutationRepository by lazy {
         TaskMutationRepository(
             api = network.api,
             reader = databaseStateStore,
             tasks = taskRepository,
+            queue = offlineQueue,
+            writer = localTaskWriter,
+            requestBackgroundSync = syncScheduler::requestFlush,
         )
     }
 

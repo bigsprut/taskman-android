@@ -57,7 +57,7 @@ class SettingsViewModel(
 
     private suspend fun report(outcome: MutationOutcome) {
         when (outcome) {
-            MutationOutcome.Success -> Unit
+            MutationOutcome.Success, MutationOutcome.Queued -> Unit
             is MutationOutcome.Conflict -> _messages.emit(
                 SettingsMessage.EmployeeFailed(ApiFailure.Conflict(outcome.actualUpdatedAt)),
             )

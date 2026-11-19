@@ -2,15 +2,18 @@ package io.github.bigsprut.taskman.ui.editor
 
 import androidx.lifecycle.SavedStateHandle
 import com.google.common.truth.Truth.assertThat
-import io.github.bigsprut.taskman.data.remote.ApiFailure
+import io.github.bigsprut.taskman.data.local.entity.PendingMutationEntity
 import io.github.bigsprut.taskman.data.remote.TaskmanJson
 import io.github.bigsprut.taskman.data.attachments.AttachmentDownloader
 import io.github.bigsprut.taskman.data.attachments.AttachmentRepository
 import io.github.bigsprut.taskman.data.remote.ConnectionHolder
+import io.github.bigsprut.taskman.data.repo.OfflineMutationQueue
 import io.github.bigsprut.taskman.data.repo.TaskMutationRepository
 import io.github.bigsprut.taskman.data.repo.TaskRepository
 import io.github.bigsprut.taskman.domain.TaskDraft
 import io.github.bigsprut.taskman.domain.TaskStatus
+import io.github.bigsprut.taskman.testutil.FakeLocalTaskWriter
+import io.github.bigsprut.taskman.testutil.FakePendingMutationDao
 import io.github.bigsprut.taskman.testutil.FakeStateStore
 import io.github.bigsprut.taskman.testutil.FakeLocalFileSource
 import io.github.bigsprut.taskman.testutil.FakeTaskmanApi
@@ -54,7 +57,16 @@ class TaskEditorViewModelTest {
     private val api = FakeTaskmanApi()
     private val store = FakeStateStore()
     private val tasks = TaskRepository(api = api, stateStore = store)
-    private val mutations = TaskMutationRepository(api = api, reader = store, tasks = tasks)
+    private val dao = FakePendingMutationDao()
+    private val queue = OfflineMutationQueue(dao)
+    private val writer = FakeLocalTaskWriter()
+    private val mutations = TaskMutationRepository(
+        api = api,
+        reader = store,
+        tasks = tasks,
+        queue = queue,
+        writer = writer,
+    )
 
     /** Состояние экрана, которое переживает поворот и убивание процесса. */
     private val savedState = SavedStateHandle()
@@ -248,7 +260,7 @@ private val attachmentsRepo = AttachmentRepository(
     }
 
     @Test
-    fun `close при сетевой ошибке оставляет лист открытым и не теряет правки`() = editorTest {
+    fun `close при сетевом сбое сохраняет черновик локально и закрывает лист`() = editorTest {
         store.putTask(entity)
         val vm = newViewModel()
         vm.open(TASK_ID)
@@ -261,16 +273,17 @@ private val attachmentsRepo = AttachmentRepository(
         vm.close()
         advanceUntilIdle()
 
-        val received = message.await()
-        assertThat(received).isInstanceOf(EditorMessage.SaveFailed::class.java)
-        assertThat((received as EditorMessage.SaveFailed).failure)
-            .isInstanceOf(ApiFailure.Network::class.java)
-
-        assertThat(vm.state.value.isOpen).isTrue()
-        assertThat(vm.state.value.isDirty).isTrue()
-        assertThat(vm.state.value.draft!!.title).isEqualTo("Купить молоко")
-        // Правка остаётся и в handle: она переживёт и закрытие ошибкой, и убивание процесса.
-        assertThat(savedState.get<String>(DRAFT_JSON_KEY)).isNotNull()
+        // С Ф4 сетевой сбой — не повод держать лист открытым: правка сохранена локально,
+        // отправку сделает воркер, а пользователь не теряет сделанное (§9-Ф4).
+        assertThat(message.await()).isEqualTo(EditorMessage.SavedLocally)
+        assertThat(vm.state.value.isOpen).isFalse()
+        assertThat(writer.upsertCalls).isEqualTo(1)
+        assertThat(writer.lastUpsert!!.title).isEqualTo("Купить молоко")
+        assertThat(writer.lastUpsert!!.status).isEqualTo("created")
+        assertThat(queue.pending().single().kind).isEqualTo(PendingMutationEntity.KIND_UPSERT)
+        assertThat(queue.pending().single().payloadJson).isNotNull()
+        // Сохранённый черновик больше не нужен: правка живёт в Room и в очереди.
+        assertThat(savedState.get<String>(DRAFT_JSON_KEY)).isNull()
         // Сеть отвалилась до ответа сервера — рефетча не было.
         assertThat(api.calls).isEqualTo(0)
     }

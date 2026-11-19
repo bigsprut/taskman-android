@@ -6,9 +6,12 @@ import io.github.bigsprut.taskman.data.remote.NetworkFactory
 import io.github.bigsprut.taskman.data.remote.TaskmanApi
 import io.github.bigsprut.taskman.data.remote.TaskmanJson
 import io.github.bigsprut.taskman.data.repo.MutationOutcome
+import io.github.bigsprut.taskman.data.repo.OfflineMutationQueue
 import io.github.bigsprut.taskman.data.repo.TaskMutationRepository
 import io.github.bigsprut.taskman.data.repo.TaskPayload
 import io.github.bigsprut.taskman.data.repo.TaskRepository
+import io.github.bigsprut.taskman.testutil.FakeLocalTaskWriter
+import io.github.bigsprut.taskman.testutil.FakePendingMutationDao
 import io.github.bigsprut.taskman.testutil.FakeStateStore
 import io.github.bigsprut.taskman.testutil.taskEntity
 import java.io.File
@@ -103,7 +106,7 @@ class MutationContractTest {
             val store = FakeStateStore().apply { putTask(fullEntity(), TAG_IDS) }
             val api = newApi(server)
             val repository = TaskRepository(api = api, stateStore = store, now = { 1L })
-            val mutations = TaskMutationRepository(api = api, reader = store, tasks = repository)
+            val mutations = newMutations(api, store, repository)
 
             val outcome = runBlocking { mutations.setCompleted(TASK_ID, completed = true) }
 
@@ -129,7 +132,7 @@ class MutationContractTest {
             val store = FakeStateStore()
             val api = newApi(server)
             val repository = TaskRepository(api = api, stateStore = store, now = { 1L })
-            val mutations = TaskMutationRepository(api = api, reader = store, tasks = repository)
+            val mutations = newMutations(api, store, repository)
 
             val outcome = runBlocking { mutations.delete(TASK_ID) }
 
@@ -146,6 +149,24 @@ class MutationContractTest {
             assertThat(store.stored).isNotNull()
         }
     }
+
+    /**
+     * Репозиторий мутаций с очередью в памяти.
+     *
+     * Контракт проверяется по проводу, поэтому Room заменён подставным писателем: очередь
+     * накапливает запись, а `flush` внутри `submit` тут же отправляет её тем же Retrofit-клиентом.
+     */
+    private fun newMutations(
+        api: TaskmanApi,
+        store: FakeStateStore,
+        tasks: TaskRepository,
+    ): TaskMutationRepository = TaskMutationRepository(
+        api = api,
+        reader = store,
+        tasks = tasks,
+        queue = OfflineMutationQueue(FakePendingMutationDao()),
+        writer = FakeLocalTaskWriter(),
+    )
 
     /** Задача со всеми заполненными полями: так payload проверяется на полноту. */
     private fun fullEntity() = taskEntity(

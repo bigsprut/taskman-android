@@ -112,6 +112,7 @@ fun MainScreen(
     val expandedParents by taskListViewModel.expandedParents.collectAsStateWithLifecycle()
     val pendingTaskIds by taskListViewModel.pendingTaskIds.collectAsStateWithLifecycle()
     val pendingMutationCount by taskListViewModel.pendingMutationCount.collectAsStateWithLifecycle()
+    val filtersHidden by taskListViewModel.filtersHidden.collectAsStateWithLifecycle()
 
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -315,6 +316,8 @@ fun MainScreen(
                     expandedParents = expandedParents,
                     pendingTaskIds = pendingTaskIds,
                     pendingMutationCount = pendingMutationCount,
+                    filtersHidden = filtersHidden,
+                    onToggleFilters = taskListViewModel::toggleFilters,
                     onSyncNow = taskListViewModel::syncNow,
                     onStatusFilterChange = taskListViewModel::setStatusFilter,
                     onCategoryToggle = taskListViewModel::toggleCategory,

@@ -74,7 +74,7 @@ class TaskListViewModel(
     private val mutations: TaskMutationRepository,
     private val attachments: AttachmentRepository,
     private val shareInbox: ShareInbox,
-    settings: SettingsStore,
+    private val settings: SettingsStore,
     store: StateStore,
     private val savedState: SavedStateHandle,
 ) : ViewModel() {
@@ -122,6 +122,13 @@ class TaskListViewModel(
     /** Порядок списка — локальная настройка устройства (§5.3-Ф5). */
     private val sortOrder = settings.observeSortOrder()
 
+    /**
+     * Свёрнут ли блок фильтров (§5.3-Ф1): состояние переживает перезапуск приложения,
+     * поэтому живёт в DataStore, а не в `rememberSaveable`.
+     */
+    val filtersHidden: StateFlow<Boolean> = settings.observeFiltersHidden()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS), false)
+
     val rows: StateFlow<List<TaskRowItem>> = combine(
         combine(tasks, _filter, _expandedParents) { tasks, filter, expanded ->
             Triple(tasks, filter, expanded)
@@ -141,6 +148,11 @@ class TaskListViewModel(
     fun toggleTag(tagId: String) = updateFilter(filter.value.toggledTag(tagId))
 
     fun resetFilter() = updateFilter(TaskFilter.DEFAULTS)
+
+    /** Свернуть/развернуть блок фильтров; выбор сохраняется между запусками (§5.3-Ф1). */
+    fun toggleFilters() {
+        viewModelScope.launch { settings.saveFiltersHidden(!filtersHidden.value) }
+    }
 
     /** Раскрыть/свернуть группу подзадач (§5.3-Ф1). */
     fun toggleExpanded(task: Task) {

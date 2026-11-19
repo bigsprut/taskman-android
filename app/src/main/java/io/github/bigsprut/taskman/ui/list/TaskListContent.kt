@@ -1,5 +1,6 @@
 package io.github.bigsprut.taskman.ui.list
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -11,6 +12,10 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Surface
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -60,6 +65,8 @@ fun TaskListContent(
     expandedParents: Set<String>,
     pendingTaskIds: Set<String>,
     pendingMutationCount: Int,
+    filtersHidden: Boolean,
+    onToggleFilters: () -> Unit,
     onSyncNow: () -> Unit,
     onStatusFilterChange: (StatusFilter) -> Unit,
     onCategoryToggle: (String) -> Unit,
@@ -110,16 +117,24 @@ fun TaskListContent(
             }
         }
 
-        TaskFilterHeader(
-            filter = filter,
-            counts = counts,
-            categories = categories,
-            tags = tags,
-            onStatusChange = onStatusFilterChange,
-            onCategoryToggle = onCategoryToggle,
-            onTagToggle = onTagToggle,
-            onReset = onResetFilter,
+        FilterToggleRow(
+            expanded = !filtersHidden,
+            activeCount = filter.activeCount(),
+            onToggle = onToggleFilters,
         )
+
+        if (!filtersHidden) {
+            TaskFilterHeader(
+                filter = filter,
+                counts = counts,
+                categories = categories,
+                tags = tags,
+                onStatusChange = onStatusFilterChange,
+                onCategoryToggle = onCategoryToggle,
+                onTagToggle = onTagToggle,
+                onReset = onResetFilter,
+            )
+        }
 
         PullToRefreshBox(
             isRefreshing = syncStatus.isRefreshing,
@@ -200,6 +215,45 @@ fun TaskListContent(
                     Text(stringResource(R.string.delete_dialog_cancel))
                 }
             },
+        )
+    }
+}
+/**
+ * Компактная строка-переключатель блока фильтров (§5.3-Ф1, решение владельца 20.11).
+ *
+ * Развёрнутые чипы занимают экран, поэтому строка остаётся всегда, а шапка фильтров
+ * показывается только в развёрнутом состоянии. Счётчик активных отборов подсказывает,
+ * что фильтры не пустые, когда чипы скрыты.
+ */
+@Composable
+private fun FilterToggleRow(
+    expanded: Boolean,
+    activeCount: Int,
+    onToggle: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onToggle)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = if (activeCount > 0) {
+                stringResource(R.string.filters_toggle_counted, activeCount)
+            } else {
+                stringResource(R.string.filters_toggle)
+            },
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.weight(1f),
+        )
+        Icon(
+            imageVector = if (expanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+            contentDescription = stringResource(
+                if (expanded) R.string.filters_toggle_hide else R.string.filters_toggle_show,
+            ),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }

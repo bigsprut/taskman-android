@@ -202,4 +202,8 @@
     <string name="create_task_field">Название задачи</string>
     <string name="create_task_confirm">Создать</string>
     <string name="task_created">Задача создана</string>
-    <string name="create_task_failed">Не удалось создать задачу</string></resources>
+    <string name="create_task_failed">Не удалось создать задачу</string>    <!-- Скрываемый блок фильтров (Ф1, решение владельца 20.11) -->
+    <string name="filters_toggle">Отборы</string>
+    <string name="filters_toggle_counted">Отборы · %1$d</string>
+    <string name="filters_toggle_show">Показать отборы</string>
+    <string name="filters_toggle_hide">Скрыть отборы</string></resources>

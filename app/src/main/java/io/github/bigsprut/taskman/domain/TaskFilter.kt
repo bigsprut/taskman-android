@@ -27,6 +27,15 @@ data class TaskFilter(
 
     val isDefault: Boolean get() = this == DEFAULTS
 
+    /**
+     * Сколько фильтров отличается от умолчания — для компактной строки «Отборы · N» (§5.3-Ф1).
+     *
+     * Считаем «штуки условий», а не задачи: статус, каждая категория, каждый тег. Значение
+     * подсказывает, что фильтры не пустые, когда блок свёрнут и чипов не видно.
+     */
+    fun activeCount(): Int =
+        (if (status != StatusFilter.ACTIVE) 1 else 0) + categoryIds.size + tagIds.size
+
     /** Совпадение по статусу — применяется и к родителям, и к детям. */
     fun matchesStatus(task: Task): Boolean = when (status) {
         StatusFilter.ACTIVE -> task.status == TaskStatus.CREATED || task.status == TaskStatus.IN_PROGRESS

@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -100,6 +101,18 @@ class SettingsStore(
         dataStore.edit { preferences -> preferences[Keys.SORT_ORDER] = order.key }
     }
 
+    /**
+     * Свёрнут ли блок фильтров (§5.3-Ф1, решение владельца 20.11) — как `taskman_filtershidden`
+     * в PWA: состояние живёт на устройстве и сохраняется между запусками.
+     */
+    fun observeFiltersHidden(): Flow<Boolean> = dataStore.data.map { preferences ->
+        preferences[Keys.FILTERS_HIDDEN] ?: false
+    }
+
+    suspend fun saveFiltersHidden(hidden: Boolean) = withContext(Dispatchers.IO) {
+        dataStore.edit { preferences -> preferences[Keys.FILTERS_HIDDEN] = hidden }
+    }
+
     private suspend fun generateDeviceId(): String {
         val deviceId = UUID.randomUUID().toString()
         dataStore.edit { preferences -> preferences[Keys.DEVICE_ID] = deviceId }
@@ -111,5 +124,6 @@ class SettingsStore(
         val TOKEN_CIPHER = stringPreferencesKey("token_cipher")
         val DEVICE_ID = stringPreferencesKey("device_id")
         val SORT_ORDER = stringPreferencesKey("sort_order")
+        val FILTERS_HIDDEN = booleanPreferencesKey("filters_hidden")
     }
 }

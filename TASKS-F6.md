@@ -33,3 +33,12 @@
    `IOException` → `LoginError.Network`; защитная ветка для `Http(401)` — обязательно.
 5. **Маппинг/фильтры выносить в чистые функции** — их можно проверить JVM-тестом без
    DataStore/Keystore/Compose.
+
+### Дополнение: F6-06 скрываемый блок фильтров
+
+`TaskFilter.activeCount()`, `SettingsStore.observeFiltersHidden()/saveFiltersHidden()`,
+`TaskListViewModel.filtersHidden`/`toggleFilters()`, строка «Отборы · N» в `TaskListContent`.
+Иконки шеврона — core `KeyboardArrowDown/Up`. Тесты: `TaskFilterActiveCountTest` (10),
+`FilterCollapseTest` (6). Грабли: `filtersHidden` — `stateIn(WhileSubscribed)` (без подписчика
+`.value` не читает DataStore), `saveFiltersHidden` уходит на `Dispatchers.IO` — в тестах ждать
+с таймаутом, а не `advanceUntilIdle()`.

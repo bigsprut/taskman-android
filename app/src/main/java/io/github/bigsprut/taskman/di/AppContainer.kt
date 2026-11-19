@@ -9,6 +9,7 @@ import io.github.bigsprut.taskman.data.local.TaskmanDatabase
 import io.github.bigsprut.taskman.data.remote.ConnectionHolder
 import io.github.bigsprut.taskman.data.remote.NetworkFactory
 import io.github.bigsprut.taskman.data.repo.DatabaseLocalTaskWriter
+import io.github.bigsprut.taskman.data.repo.CatalogRepository
 import io.github.bigsprut.taskman.data.repo.DatabaseStateStore
 import io.github.bigsprut.taskman.data.repo.LocalTaskWriter
 import io.github.bigsprut.taskman.data.repo.OfflineMutationQueue
@@ -38,7 +39,7 @@ class AppContainer(context: Context) {
 
     private val tokenCodec = AndroidKeystoreTokenCodec()
 
-    private val settingsStore = SettingsStore(
+    val settingsStore = SettingsStore(
         dataStore = applicationContext.taskmanSettingsDataStore,
         tokenCodec = tokenCodec,
         // Адрес инстанса приходит из local.properties через BuildConfig (ТЗ §5.4);
@@ -91,6 +92,11 @@ class AppContainer(context: Context) {
             writer = localTaskWriter,
             requestBackgroundSync = syncScheduler::requestFlush,
         )
+    }
+
+    /** Справочники тегов/категорий и настройки инстанса (Ф5). */
+    val catalogRepository: CatalogRepository by lazy {
+        CatalogRepository(api = network.api, tasks = taskRepository)
     }
 
     val employeeRepository: EmployeeRepository by lazy {

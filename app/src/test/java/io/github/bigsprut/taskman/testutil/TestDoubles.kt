@@ -2,12 +2,21 @@ package io.github.bigsprut.taskman.testutil
 
 import io.github.bigsprut.taskman.data.attachments.AttachmentStore
 import io.github.bigsprut.taskman.data.attachments.LocalFile
+import io.github.bigsprut.taskman.data.attachments.LocalFileHandle
 import io.github.bigsprut.taskman.data.attachments.LocalFileSource
 import io.github.bigsprut.taskman.data.local.PendingMutationDao
 import io.github.bigsprut.taskman.data.local.entity.PendingMutationEntity
 import io.github.bigsprut.taskman.data.local.entity.TaskEntity
 import io.github.bigsprut.taskman.data.remote.TaskmanApi
+import io.github.bigsprut.taskman.data.export.ExportSnapshot
 import io.github.bigsprut.taskman.data.remote.dto.AttachmentDto
+import io.github.bigsprut.taskman.data.remote.dto.CategoryInDto
+import io.github.bigsprut.taskman.data.remote.dto.CategoryResponse
+import io.github.bigsprut.taskman.data.remote.dto.DeleteCatalogResponse
+import kotlinx.serialization.json.JsonObject
+import io.github.bigsprut.taskman.data.remote.dto.SettingsResponse
+import io.github.bigsprut.taskman.data.remote.dto.TagInDto
+import io.github.bigsprut.taskman.data.remote.dto.TagResponse
 import io.github.bigsprut.taskman.data.remote.dto.AttachmentUploadResponse
 import io.github.bigsprut.taskman.data.remote.dto.DeleteAttachmentResponse
 import io.github.bigsprut.taskman.data.remote.dto.DeleteEmployeeResponse
@@ -239,6 +248,73 @@ class FakeTaskmanApi : TaskmanApi {
         lastDeletedEmployeeId = id
         return deleteEmployeeOutcome()
     }
+
+    // --- Ф5: теги, категории, настройки ---
+
+    var createTagOutcome: () -> Response<TagResponse> =
+        { Response.success(TagResponse(id = "tag-new", title = "Тег", color = "#4a5c92")) }
+    var updateTagOutcome: () -> Response<TagResponse> =
+        { Response.success(TagResponse(id = "tag-1", title = "Тег", color = "#4a5c92")) }
+    var deleteTagOutcome: () -> Response<DeleteCatalogResponse> =
+        { Response.success(DeleteCatalogResponse(deleted = "tag-1")) }
+    var createCategoryOutcome: () -> Response<CategoryResponse> =
+        { Response.success(CategoryResponse(id = "cat-new", title = "Категория", color = "#4a5c92")) }
+    var updateCategoryOutcome: () -> Response<CategoryResponse> =
+        { Response.success(CategoryResponse(id = "cat-1", title = "Категория", color = "#4a5c92")) }
+    var deleteCategoryOutcome: () -> Response<DeleteCatalogResponse> =
+        { Response.success(DeleteCatalogResponse(deleted = "cat-1")) }
+    var updateSettingsOutcome: () -> Response<SettingsResponse> =
+        { Response.success(SettingsResponse(defaultCategory = null)) }
+
+    var lastCreatedTag: TagInDto? = null
+    var lastUpdatedTagId: String? = null
+    var lastUpdatedTag: TagInDto? = null
+    var lastDeletedTagId: String? = null
+    var lastCreatedCategory: CategoryInDto? = null
+    var lastUpdatedCategoryId: String? = null
+    var lastUpdatedCategory: CategoryInDto? = null
+    var lastDeletedCategoryId: String? = null
+    var lastSettingsBody: JsonObject? = null
+
+    override suspend fun createTag(body: TagInDto): Response<TagResponse> {
+        lastCreatedTag = body
+        return createTagOutcome()
+    }
+
+    override suspend fun updateTag(id: String, body: TagInDto): Response<TagResponse> {
+        lastUpdatedTagId = id
+        lastUpdatedTag = body
+        return updateTagOutcome()
+    }
+
+    override suspend fun deleteTag(id: String): Response<DeleteCatalogResponse> {
+        lastDeletedTagId = id
+        return deleteTagOutcome()
+    }
+
+    override suspend fun createCategory(body: CategoryInDto): Response<CategoryResponse> {
+        lastCreatedCategory = body
+        return createCategoryOutcome()
+    }
+
+    override suspend fun updateCategory(
+        id: String,
+        body: CategoryInDto,
+    ): Response<CategoryResponse> {
+        lastUpdatedCategoryId = id
+        lastUpdatedCategory = body
+        return updateCategoryOutcome()
+    }
+
+    override suspend fun deleteCategory(id: String): Response<DeleteCatalogResponse> {
+        lastDeletedCategoryId = id
+        return deleteCategoryOutcome()
+    }
+
+    override suspend fun updateSettings(body: JsonObject): Response<SettingsResponse> {
+        lastSettingsBody = body
+        return updateSettingsOutcome()
+    }
 }
 
 /**
@@ -264,6 +340,8 @@ class FakeStateStore(initialTasks: List<Task> = emptyList()) :
     var clearCalls: Int = 0
     val snapshots = mutableListOf<StateSnapshot>()
     val tasksFlow = MutableStateFlow(initialTasks)
+    val defaultCategoryFlow = MutableStateFlow<String?>(null)
+    var exportSnapshot: ExportSnapshot = ExportSnapshot()
     val tagsFlow = MutableStateFlow<List<Tag>>(emptyList())
     val categoriesFlow = MutableStateFlow<List<Category>>(emptyList())
 
@@ -331,6 +409,10 @@ class FakeStateStore(initialTasks: List<Task> = emptyList()) :
             TaskDraftSnapshot(entity = entity, tagIds = tagsByTask[taskId].orEmpty())
         }
 
+    override fun observeDefaultCategoryId(): Flow<String?> = defaultCategoryFlow
+
+    override suspend fun loadExportSnapshot(): ExportSnapshot = exportSnapshot
+
     override suspend fun clear() {
         clearCalls += 1
         stored = null
@@ -379,10 +461,10 @@ class FakeLocalFileSource(var file: LocalFile? = null) : LocalFileSource {
     /** uri последнего запроса на чтение. */
     var lastUri: String? = null
 
-    override suspend fun read(uri: String): LocalFile? {
+    override suspend fun open(uri: String): LocalFileHandle? {
         readCalls += 1
         lastUri = uri
-        return file
+        return file?.handle()
     }
 }
 

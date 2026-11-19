@@ -60,6 +60,18 @@ class TaskMutationRepository(
     /** Сколько мутаций ждёт отправки — для баннера «есть неотправленные изменения». */
     fun observePendingCount(): Flow<Int> = queue.observePendingCount()
 
+    /**
+     * Ручная отправка: кнопка «Отправить сейчас» в баннере (Q18).
+     *
+     * Отправляем **сразу** в текущем процессе, а не только через WorkManager: уникальная
+     * работа с политикой `KEEP` может ждать предыдущую с backoff, и кнопка выглядела бы
+     * «мёртвой». Планировщик всё равно дёргаем — как страховку, если сеть пропадёт.
+     */
+    suspend fun syncNow(): MutationOutcome {
+        requestBackgroundSync()
+        return flush()
+    }
+
     /** Чекбокс: переводит задачу в `completed` или обратно в `created` (ТЗ §5.3-Ф1). */
     suspend fun setCompleted(taskId: String, completed: Boolean): MutationOutcome {
         val entity = reader.taskEntity(taskId) ?: return absent(taskId)

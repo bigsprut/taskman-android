@@ -10,7 +10,10 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
+import io.github.bigsprut.taskman.domain.TaskSortOrder
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 
 /** Параметры подключения, с которыми работает приложение. */
@@ -85,6 +88,18 @@ class SettingsStore(
         dataStore.edit { preferences -> preferences.remove(Keys.TOKEN_CIPHER) }
     }
 
+    /**
+     * Порядок сортировки списка (§5.3-Ф5) — локальная настройка устройства; сервер о ней
+     * не знает, поэтому живёт рядом с адресом/токеном, а не в снапшоте.
+     */
+    fun observeSortOrder(): Flow<TaskSortOrder> = dataStore.data.map { preferences ->
+        TaskSortOrder.fromKey(preferences[Keys.SORT_ORDER])
+    }
+
+    suspend fun saveSortOrder(order: TaskSortOrder) = withContext(Dispatchers.IO) {
+        dataStore.edit { preferences -> preferences[Keys.SORT_ORDER] = order.key }
+    }
+
     private suspend fun generateDeviceId(): String {
         val deviceId = UUID.randomUUID().toString()
         dataStore.edit { preferences -> preferences[Keys.DEVICE_ID] = deviceId }
@@ -95,5 +110,6 @@ class SettingsStore(
         val BASE_URL = stringPreferencesKey("base_url")
         val TOKEN_CIPHER = stringPreferencesKey("token_cipher")
         val DEVICE_ID = stringPreferencesKey("device_id")
+        val SORT_ORDER = stringPreferencesKey("sort_order")
     }
 }

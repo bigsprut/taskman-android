@@ -9,6 +9,7 @@ import io.github.bigsprut.taskman.data.attachments.AttachmentRepository
 import io.github.bigsprut.taskman.data.attachments.ShareInbox
 import io.github.bigsprut.taskman.data.repo.MutationOutcome
 import io.github.bigsprut.taskman.data.repo.StateStore
+import io.github.bigsprut.taskman.data.settings.SettingsStore
 import io.github.bigsprut.taskman.data.repo.SyncStatus
 import io.github.bigsprut.taskman.data.repo.TaskMutationRepository
 import io.github.bigsprut.taskman.data.repo.TaskRepository
@@ -49,6 +50,9 @@ sealed interface ListMessage {
 
     /** Сети нет: изменение сохранено локально и уйдёт из очереди (Ф4). */
     data object SavedLocally : ListMessage
+
+    /** Очередь отправлена вручную кнопкой «Отправить сейчас» (Q18). */
+    data object Synced : ListMessage
 }
 
 /**
@@ -64,6 +68,7 @@ class TaskListViewModel(
     private val mutations: TaskMutationRepository,
     private val attachments: AttachmentRepository,
     private val shareInbox: ShareInbox,
+    settings: SettingsStore,
     store: StateStore,
     private val savedState: SavedStateHandle,
 ) : ViewModel() {
@@ -108,12 +113,19 @@ class TaskListViewModel(
         )
 
     /** Плоские строки списка: родитель и (если раскрыт) его подзадачи. */
+    /** Порядок списка — локальная настройка устройства (§5.3-Ф5). */
+    private val sortOrder = settings.observeSortOrder()
+
     val rows: StateFlow<List<TaskRowItem>> = combine(
-        tasks,
-        _filter,
-        _expandedParents,
-    ) { tasks, filter, expanded ->
-        TaskGroups.toRows(TaskGroups.build(tasks, filter), expanded)
+        combine(tasks, _filter, _expandedParents) { tasks, filter, expanded ->
+            Triple(tasks, filter, expanded)
+        },
+        sortOrder,
+    ) { (tasks, filter, expanded), order ->
+        TaskGroups.toRows(
+            TaskGroups.build(tasks.sortedWith(order.comparator()), filter),
+            expanded,
+        )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS), emptyList())
 
     fun setStatusFilter(status: StatusFilter) = updateFilter(filter.value.withStatus(status))
@@ -178,6 +190,18 @@ class TaskListViewModel(
 
     fun dismissSharedFiles() {
         shareInbox.clear()
+    }
+
+    /** «Отправить сейчас»: не ждём backoff воркера (Q18). */
+    fun syncNow() {
+        viewModelScope.launch {
+            when (val outcome = mutations.syncNow()) {
+                MutationOutcome.Success -> _messages.emit(ListMessage.Synced)
+                MutationOutcome.Queued -> _messages.emit(ListMessage.SavedLocally)
+                is MutationOutcome.Conflict -> _messages.emit(ListMessage.ToggleConflict)
+                is MutationOutcome.Failed -> _messages.emit(ListMessage.ToggleFailed(outcome.failure))
+            }
+        }
     }
 
     /** Прикладывает все ожидающие файлы к выбранной задаче и очищает очередь. */

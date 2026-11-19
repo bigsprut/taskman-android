@@ -1,15 +1,16 @@
 # Мок-сервер состояния taskman
 
 > **Это dev-инструмент для локальной разработки, а не сервер продукта.**
-> Состояние он держит в памяти и умеет мутации задач, вложений и сотрудников,
-> а теги, категории, списки, настройки и `/api/sync` здесь только читаются из
+> Состояние он держит в памяти и умеет мутации задач, вложений, сотрудников,
+> тегов, категорий и настроек, а списки и `/api/sync` здесь только читаются из
 > фикстуры. Никогда не запускайте его как замену настоящему серверу и не
 > переносите его значения по умолчанию (адрес, порт, токен) в продукт.
 
 Мок нужен, чтобы запускать приложение и проверять руками контракт без доступа к
 настоящему серверу владельца: авторизацию заголовком `Token`, привязку устройства
 (TOFU), `ETag`/`304`, gzip, а с Ф1 — сценарии «создать / изменить / выполнить /
-удалить задачу», с Ф3 — вложения и справочник сотрудников:
+удалить задачу», с Ф3 — вложения и справочник сотрудников, с Ф5 — теги, категории
+и категорию по умолчанию:
 
 - `GET /api/state` — текущее состояние (soft-deleted задачи не попадают);
 - `POST /api/tasks` — UPSERT списка задач полным объектом с CAS по `updated_at`;
@@ -18,7 +19,10 @@
 - `POST /api/tasks/{id}/attachments` — multipart-аплоад вложения (поле `file`);
 - `GET /api/attachments/{id}?token=…` — байты файла (токен ТОЛЬКО query);
 - `DELETE /api/attachments/{id}` — soft-delete вложения;
-- `POST/PATCH/DELETE /api/employees[/{id}]` — справочник сотрудников.
+- `POST/PATCH/DELETE /api/employees[/{id}]` — справочник сотрудников;
+- `GET/POST/PATCH/DELETE /api/tags[/{id}]` — теги;
+- `GET/POST/PATCH/DELETE /api/categories[/{id}]` — категории;
+- `PATCH /api/settings` — категория по умолчанию для новых задач.
 
 Фикстура читается **один раз при старте**, дальше сервер работает со своей копией
 в памяти: после перезапуска все мутации пропадают, и снова отдаётся фикстура.
@@ -104,15 +108,27 @@ py tools\mock-server\mock_state_server.py --port 18443
 | `POST /api/employees` | `200`, `{"id", "name"}`; `400` — пустое имя |
 | `PATCH /api/employees/{id}` | `200`, обновлённая запись; `400` — пустое имя, `404` — неизвестный id |
 | `DELETE /api/employees/{id}` | `200`, `{"deleted": id}`; `404` — неизвестный id |
+| `GET /api/tags` | `200`, список `[{id, title, color}]` |
+| `GET /api/tags/{id}` | `200`, `{id, title, color}`; `404` — неизвестный id |
+| `POST /api/tags` | `200`, `{id, title, color}`; `400` — пустой/пробельный `title` |
+| `PATCH /api/tags/{id}` | `200`, обновлённая запись; `400` — пустой `title`, `404` — неизвестный id |
+| `DELETE /api/tags/{id}` | `200`, `{"deleted": id}`; `404` — неизвестный id |
+| `GET /api/categories` | `200`, список `[{id, title, color}]` (сверх контракта, для удобства) |
+| `GET /api/categories/{id}` | `200`, `{id, title, color}`; `404` — неизвестный id (сверх контракта) |
+| `POST /api/categories` | `200`, `{id, title, color}`; `400` — пустой/пробельный `title` |
+| `PATCH /api/categories/{id}` | `200`, обновлённая запись; `400` — пустой `title`, `404` — неизвестный id |
+| `DELETE /api/categories/{id}` | `200`, `{"deleted": id}`; `404` — неизвестный id |
+| `PATCH /api/settings` | `200`, `{"default_category", "server_time"}`; `400` — `default_category` не строка, `404` — неизвестный id категории |
 | другой путь | `404`, `{"error": "not_found"}` |
 | другой метод по известному пути | `405`, `{"error": "method_not_allowed"}` + заголовок `Allow` (сверх контракта, для наглядности) |
 | `OPTIONS` | `204` с CORS-заголовками (сверх контракта, для браузерных проверок) |
 
-Сверх контракта у мутаций бывают ещё коды: `400 {"error": "bad_request"}` — битое
-тело/неизвестный статус/пустое имя, `413 {"error": "payload_too_large"}` — тело
-больше 8 МиБ (у аплоада ограничение относится к самому файлу), `500
-{"error": "fixture_not_object"}` — фикстура не JSON-объект (мутации некуда
-применять, чтение при этом работает как раньше).
+Сверх контракта бывают ещё коды: `400 {"error": "bad_request"}` — битое
+тело/неизвестный статус/пустое имя/пустой `title`, `413
+{"error": "payload_too_large"}` — тело больше 8 МиБ (у аплоада ограничение
+относится к самому файлу), `500 {"error": "fixture_not_object"}` — фикстура не
+JSON-объект: мутации и `GET` тегов/категорий некуда применять, а `/api/state`
+работает как раньше и отдаёт файл как есть.
 
 ### Авторизация
 
@@ -317,6 +333,92 @@ curl.exe -X POST -H "Token: local-dev-token" -H "Content-Type: application/json"
 - неизвестный id → `404`. Отдельного `GET /api/employees` в моке нет: список
   приходит в `GET /api/state`.
 
+### Теги и категории
+
+Контракт (§6): `GET/POST/PATCH/DELETE /api/tags[/{id}]` и
+`POST/PATCH/DELETE /api/categories[/{id}]`. `GET`-ы в моке есть у обоих
+справочников — так удобнее проверять руками (в приложении списки приходят
+в `GET /api/state`). Ответ любой карточки — ровно `{id, title, color}`;
+`position` живёт только в `/api/state`.
+
+Тело `POST` — `{"title": "...", "color": "#rrggbb"}` (цвет необязателен),
+тело `PATCH` — частичное: отсутствующее поле не меняется.
+
+```powershell
+# создать: 200 {"id": "<32 hex>", "title": "Мой тег", "color": "#e5ad00"}
+'{"title": " Мой тег ", "color": "#e5ad00"}' | Set-Content tag.json -Encoding utf8
+curl.exe -X POST -H "Token: local-dev-token" -H "Content-Type: application/json" `
+    --data-binary "@tag.json" http://127.0.0.1:8443/api/tags
+
+# только цвет: title сохраняется; 200 {"id", "title", "color"}
+curl.exe -X PATCH -H "Token: local-dev-token" -H "Content-Type: application/json" `
+    --data-binary '{"color": "#00ff00"}' http://127.0.0.1:8443/api/tags/<id>
+
+# список, карточка, удаление
+curl.exe -s -H "Token: local-dev-token" http://127.0.0.1:8443/api/tags
+curl.exe -s -H "Token: local-dev-token" http://127.0.0.1:8443/api/tags/<id>
+curl.exe -X DELETE -H "Token: local-dev-token" http://127.0.0.1:8443/api/tags/<id>
+```
+
+Правила:
+
+- `title` обрезается по краям: `"  Мой тег  "` → `"Мой тег"`. Пустой (в том
+  числе из одних пробелов) → `400 {"error": "bad_request"}`.
+- `color` сохраняется ровно как прислали: нормализацию (`#rrggbb`) делает клиент.
+  Цвет необязателен — без него в записи будет `color: null`.
+- `PATCH` частичный: `{"color": …}` не трогает `title` и наоборот. `null` в поле
+  считается «не передано» (клиент с `explicitNulls = false` null-поля не шлёт).
+  `PATCH` вообще без изменяемых полей (`{}`) отвечает `200` и не меняет запись.
+- Новый тег/категория получает `position = max + 1`, то есть в конец списка
+  (в фикстуре есть `position`, и `/api/state` его отдаёт). После удаления
+  оставшиеся `position` не перенумеровываются.
+- `DELETE` тега: запись исчезает из `state.tags` **и** её id убирается из
+  `tasks[].tags` у всех задач (включая soft-deleted). `updated_at` задач при
+  этом не меняется.
+- `DELETE` категории: у задач `category_id` → `null`, а если категория была
+  `settings.default_category`, настройка тоже становится `null` — висячей
+  ссылки в состоянии не остаётся.
+- Неизвестный id → `404 {"error": "not_found"}`.
+
+Категории — те же правила и коды; пример:
+
+```powershell
+'{"title": "Новая категория", "color": "#123456"}' | Set-Content cat.json -Encoding utf8
+curl.exe -X POST -H "Token: local-dev-token" -H "Content-Type: application/json" `
+    --data-binary "@cat.json" http://127.0.0.1:8443/api/categories
+curl.exe -X PATCH -H "Token: local-dev-token" -H "Content-Type: application/json" `
+    --data-binary '{"title": "Переименованная"}' http://127.0.0.1:8443/api/categories/<id>
+curl.exe -X DELETE -H "Token: local-dev-token" http://127.0.0.1:8443/api/categories/<id>
+```
+
+### `PATCH /api/settings` — категория по умолчанию
+
+Тело — `{"default_category": "<id категории>"}` или `{"default_category": null}`.
+
+```powershell
+# 200 {"default_category": "<id>", "server_time": 1795118210.22}
+curl.exe -X PATCH -H "Token: local-dev-token" -H "Content-Type: application/json" `
+    --data-binary '{"default_category": "ee374424b6d340a8b6fece6c6dee36a3"}' `
+    http://127.0.0.1:8443/api/settings
+
+# снять настройку: 200 {"default_category": null, "server_time": ...}
+curl.exe -X PATCH -H "Token: local-dev-token" -H "Content-Type: application/json" `
+    --data-binary '{"default_category": null}' http://127.0.0.1:8443/api/settings
+```
+
+- значение должно быть id существующей категории; неизвестный id → `404`;
+- поле можно не передавать: отсутствие `default_category` — то же, что `null`.
+  Клиент сериализует null-поля как отсутствующие (`explicitNulls = false`),
+  поэтому «снять категорию» из приложения приходит как `{}` и работает;
+- других настроек мок не знает, лишние поля игнорирует;
+- значение сразу видно в `state.settings.default_category`, а новые задачи без
+  `category_id` получают его при `POST /api/tasks` (ТЗ §4) — уже из памяти,
+  а не из фикстуры;
+- `server_time` в ответе — текущее время сервера.
+
+Каждая успешная мутация тегов, категорий и настроек пересчитывает `ETag` и
+`server_time` и пишет `--state-out`, как и остальные мутации.
+
 ## ETag и 304
 
 `ETag` — это md5 канонического JSON **текущего** состояния **без поля
@@ -349,13 +451,15 @@ python tools\mock-server\mock_state_server.py --port 18443 --state-out state.loc
 ```
 
 После каждой **успешной** мутации сервер пишет в файл то же состояние, что отдаёт
-`GET /api/state`: без soft-deleted задач, с актуальным списком сотрудников, с
-текущим `server_time`, в читаемом JSON (UTF-8, отступ 1 пробел). Файл пишется
-атомарно (`*.tmp` + `os.replace`), так что никогда не содержит половину JSON.
-Байты вложений в файл не попадают — только их описания из `attachments[]`.
+`GET /api/state`: без soft-deleted задач, с актуальными сотрудниками, тегами,
+категориями и настройками, с текущим `server_time`, в читаемом JSON (UTF-8,
+отступ 1 пробел). Файл пишется атомарно (`*.tmp` + `os.replace`), так что никогда
+не содержит половину JSON. Байты вложений в файл не попадают — только их описания
+из `attachments[]`.
 
 - при старте файл не создаётся и не читается — только после первой мутации
-  (в том числе аплоада вложения или изменения сотрудника);
+  (в том числе аплоада вложения, правки сотрудника, тега, категории или
+  настроек);
 - каталог должен существовать заранее, иначе сервер не стартует (код 2);
 - ошибка записи (например, файл занят) печатается в stderr и не ломает ответ
   клиенту;
@@ -387,6 +491,10 @@ python tools\mock-server\mock_state_server.py --port 18443 --state-out state.loc
 | `attachment_missing` | `404` при скачивании (неизвестный/удалённый id) |
 | `attachment_too_large` | `413` — файл больше 8 МиБ |
 | `employee_created` / `employee_updated` / `employee_deleted` | справочник сотрудников |
+| `tags` / `tag_get` / `categories` / `category_get` | чтение тегов и категорий |
+| `tag_created` / `tag_updated` / `tag_deleted` | мутации тегов |
+| `category_created` / `category_updated` / `category_deleted` | мутации категорий |
+| `settings_updated` | успешный `PATCH /api/settings` |
 | `not_found`, `bad_request`, `unauthorized`, `method_not_allowed` … | отказы |
 | `preflight` | `OPTIONS` |
 
@@ -547,6 +655,62 @@ curl.exe -s -X DELETE -H "Token: local-dev-token" "$base/api/employees/$($emp.id
 query — `401`; после удаления — `404`; пустое имя сотрудника — `400`; неизвестный
 id сотрудника — `404`; файл больше 8 МиБ — `413`.
 
+### Сценарий Ф5: теги, категории и настройки
+
+Мок на порту 18601 с `--state-out` (удобно сразу смотреть файл):
+
+```powershell
+$base = 'http://127.0.0.1:18601'
+$h = @{ Token = 'local-dev-token' }
+
+# 1) список тегов из фикстуры и создание нового (title с пробелами обрезается)
+Invoke-RestMethod "$base/api/tags" -Headers $h | Format-Table id, title, color
+'{"title": " Мой тег ", "color": "#e5ad00"}' | Set-Content "$env:TEMP\tag.json" -Encoding utf8
+$tag = curl.exe -s --data-binary "@$env:TEMP\tag.json" -H "Content-Type: application/json" `
+    -H "Token: local-dev-token" "$base/api/tags" | ConvertFrom-Json
+$tag.title                                  # Мой тег
+$state = Invoke-RestMethod "$base/api/state" -Headers $h
+($state.tags | Where-Object id -eq $tag.id).position    # 4 — новый в конце списка
+
+# 2) частичный PATCH: меняем только цвет, title остаётся прежним
+curl.exe -s -X PATCH -H "Content-Type: application/json" -H "Token: local-dev-token" `
+    --data-binary '{"color": "#00ff00"}' "$base/api/tags/$($tag.id)"
+
+# 3) валидация: пустой title -> 400, неизвестный id -> 404
+curl.exe -s -o NUL -w "%{http_code}`n" -H "Content-Type: application/json" `
+    -H "Token: local-dev-token" --data-binary '{"title": "   "}' "$base/api/tags"
+curl.exe -s -o NUL -w "%{http_code}`n" -H "Token: local-dev-token" `
+    "$base/api/tags/00000000000000000000000000000000"
+
+# 4) удаление тега из фикстуры: он исчезает из state и из tasks[].tags
+$tag3 = ($state.tags | Where-Object title -eq 'Тег 3').id
+Invoke-RestMethod "$base/api/tags/$tag3" -Method Delete -Headers $h
+$state = Invoke-RestMethod "$base/api/state" -Headers $h
+$state.tags.id -contains $tag3                                  # False
+@($state.tasks | Where-Object { $_.tags -contains $tag3 }).Count # 0
+
+# 5) удаление категории: у задач category_id -> null
+$cat1 = ($state.categories | Where-Object title -eq 'Категория 1').id
+Invoke-RestMethod "$base/api/categories/$cat1" -Method Delete -Headers $h
+$state = Invoke-RestMethod "$base/api/state" -Headers $h
+@($state.tasks | Where-Object { $null -ne $_.category_id }).Count # 0
+$state.settings.default_category                                # null: была по умолчанию
+
+# 6) настройки: назначить и снять категорию по умолчанию
+$cat2 = ($state.categories | Where-Object title -eq 'Категория 2').id
+curl.exe -s -X PATCH -H "Content-Type: application/json" -H "Token: local-dev-token" `
+    --data-binary ('{"default_category": "' + $cat2 + '"}') "$base/api/settings"
+(Invoke-RestMethod "$base/api/state" -Headers $h).settings.default_category   # <cat2>
+curl.exe -s -X PATCH -H "Content-Type: application/json" -H "Token: local-dev-token" `
+    --data-binary '{"default_category": null}' "$base/api/settings"
+curl.exe -s -o NUL -w "%{http_code}`n" -X PATCH -H "Content-Type: application/json" `
+    -H "Token: local-dev-token" --data-binary '{"default_category": "00000000000000000000000000000000"}' `
+    "$base/api/settings"                                        # 404
+```
+
+Не забывайте: после `DELETE` тега/категории `ETag` меняется, а `--state-out`
+содержит уже новое состояние.
+
 ## Что можно проверить руками в приложении
 
 - вход с токеном `local-dev-token`; неверный токен → экран входа (401);
@@ -574,6 +738,14 @@ id сотрудника — `404`; файл больше 8 МиБ — `413`.
   удаление и скачивание дают `404`;
 - **сотрудники**: создание/переименование/удаление в приложении отражается в
   `state.employees`; пустое имя → `400`, неизвестный id → `404`;
+- **теги**: создание, переименование и удаление в настройках отражаются в
+  `state.tags` (в журнале `result=tag_created` и т. п.); удалённый тег исчезает
+  из задач и из фильтра; пустой title → `400`;
+- **категории**: то же для `state.categories`; удаление категории сбрасывает
+  `category_id` у задач и `settings.default_category`;
+- **категория по умолчанию**: выбор в настройках уходит `PATCH /api/settings`,
+  сразу виден в `state.settings.default_category`, а новая задача получает её
+  автоматически;
 - недоступный сервер: остановите мок и посмотрите, как приложение показывает ошибку;
 - `--state-out` — открыть файл после мутаций и сравнить с `GET /api/state`.
 
@@ -583,14 +755,18 @@ id сотрудника — `404`; файл больше 8 МиБ — `413`.
   не сохраняется.
 - Мутации: `POST /api/tasks` (UPSERT + CAS), `POST /api/tasks/{id}/toggle`,
   `DELETE /api/tasks/{id}`, `POST /api/tasks/{id}/attachments`,
-  `GET`/`DELETE /api/attachments/{id}`, `POST/PATCH/DELETE /api/employees[/{id}]`.
-  `/api/tags`, `/api/categories`, `/api/lists`, `/api/settings` и `/api/sync`
-  по-прежнему только читаются из фикстуры.
+  `GET`/`DELETE /api/attachments/{id}`, `POST/PATCH/DELETE /api/employees[/{id}]`,
+  `POST/PATCH/DELETE /api/tags[/{id}]`, `POST/PATCH/DELETE /api/categories[/{id}]`,
+  `PATCH /api/settings`. `/api/lists` и `/api/sync` по-прежнему только читаются
+  из фикстуры.
 - **Байты вложений живут в памяти процесса**: после перезапуска они пропадают,
   на диск мок ничего не пишет и при остановке чистить нечего. Вложения из
   фикстуры отдаются заглушкой объявленного размера — настоящих байт в фикстуре нет.
-- Ссылочная целостность не проверяется: id списка, категории и тегов мок
-  принимает как есть, даже если такого объекта в фикстуре нет.
+- При удалении тега/категории ссылки у задач чистятся, но при `POST /api/tasks`
+  ссылочная целостность не проверяется: id списка, категории и тегов мок
+  принимает как есть, даже если такого объекта в памяти нет (как и раньше).
+- `updated_at` задач при удалении тега/категории не меняется: правка касается
+  только ссылок.
 - «Воскрешения» soft-deleted задачи нет: UPSERT сохраняет `deleted = 1`.
 - Файл `--state-out` — снимок, а не вход: сервер его не читает и не восстанавливает
   из него состояние. Байты вложений в него не попадают.
@@ -605,7 +781,8 @@ id сотрудника — `404`; файл больше 8 МиБ — `413`.
   описанного контракта, добавлены для удобства и диагностики.
 - Мок не заменяет интеграционные тесты и не проверяет серверную логику: он лишь
   воспроизводит формат ответа и коды. В частности, `updated_at` задачи при
-  аплоаде вложения не меняется, а у сотрудников нет версий/истории.
+  аплоаде вложения не меняется, а у сотрудников, тегов и категорий нет
+  версий/истории.
 - Android: cleartext `http://` в release-сборке запрещён; debug-сборка такой адрес
   разрешает. Если запрос не уходит, ищите причину в настройках сети приложения
   (`app/**`), а не в моке.

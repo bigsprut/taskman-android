@@ -86,6 +86,13 @@ class TaskRepository(
     /** Задачи для списка, уже в порядке [StatusOrder]. */
     fun observeTasks(): Flow<List<Task>> = stateStore.observeTasks().map(StatusOrder::sort)
 
+    /** Категория по умолчанию из настроек инстанса (§5.3-Ф5). */
+    fun observeDefaultCategoryId(): Flow<String?> = stateStore.observeDefaultCategoryId()
+
+    /** Снапшот для экспорта в markdown (§5.3-Ф5) — читает Room напрямую, без сервера. */
+    suspend fun loadExportSnapshot(): io.github.bigsprut.taskman.data.export.ExportSnapshot =
+        stateStore.loadExportSnapshot()
+
     /** Справочник сотрудников — для поля «сотрудник» в редакторе (§5.3-Ф2). */
     fun observeEmployees(): Flow<List<Employee>> = stateStore.observeEmployees()
 

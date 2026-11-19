@@ -35,6 +35,7 @@ object TaskmanViewModels {
                 mutations = container.taskMutationRepository,
                 attachments = container.attachmentRepository,
                 shareInbox = container.shareInbox,
+                settings = container.settingsStore,
                 store = container.catalogStore,
                 savedState = createSavedStateHandle(),
             )
@@ -57,7 +58,9 @@ object TaskmanViewModels {
         initializer {
             SettingsViewModel(
                 employees = container.employeeRepository,
+                catalog = container.catalogRepository,
                 store = container.catalogStore,
+                settings = container.settingsStore,
             )
         }
     }

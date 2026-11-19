@@ -69,12 +69,32 @@ interface StateDao {
     suspend fun childrenOf(parentId: String): List<TaskEntity>
 
     /** Каталог тегов для чипов фильтра — отдельным потоком, с инвалидацией при замене снапшота. */
+    @Query("SELECT * FROM server_settings WHERE id = 1")
+    fun observeSettings(): Flow<ServerSettingsEntity?>
+
     @Query("SELECT * FROM tags ORDER BY position")
     fun observeTagCatalog(): Flow<List<TagEntity>>
 
     /** Каталог категорий для чипов фильтра. */
     @Query("SELECT * FROM categories ORDER BY position")
     fun observeCategoryCatalog(): Flow<List<CategoryEntity>>
+
+    // --- Полные выборки для экспорта в markdown (§5.3-Ф5) ---
+
+    @Query("SELECT * FROM tasks WHERE deleted = 0")
+    suspend fun allTasksForExport(): List<TaskEntity>
+
+    @Query("SELECT * FROM tags ORDER BY position")
+    suspend fun allTagsForExport(): List<TagEntity>
+
+    @Query("SELECT * FROM categories ORDER BY position")
+    suspend fun allCategoriesForExport(): List<CategoryEntity>
+
+    @Query("SELECT * FROM task_tags")
+    suspend fun allTaskTags(): List<TaskTagEntity>
+
+    @Query("SELECT * FROM attachments WHERE deleted = 0")
+    suspend fun allAttachmentsForExport(): List<AttachmentEntity>
 
     /** Справочник сотрудников для редактора задачи (§5.3-Ф2). */
     @Query("SELECT * FROM employees ORDER BY name")

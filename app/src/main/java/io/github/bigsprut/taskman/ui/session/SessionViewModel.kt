@@ -242,6 +242,7 @@ class SessionViewModel(
         is ApiFailure.Malformed -> LoginError.UnexpectedData
         is ApiFailure.Conflict -> LoginError.UnexpectedData
         is ApiFailure.Internal -> LoginError.UnexpectedData
+        ApiFailure.InvalidInput -> LoginError.UnexpectedData
         ApiFailure.Unauthorized -> LoginError.Unauthorized
         ApiFailure.DeviceNotApproved -> LoginError.Network
     }

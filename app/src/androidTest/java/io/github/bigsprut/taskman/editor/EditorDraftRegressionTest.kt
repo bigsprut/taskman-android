@@ -7,6 +7,9 @@ import androidx.compose.ui.test.performTextReplacement
 import androidx.lifecycle.SavedStateHandle
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import io.github.bigsprut.taskman.data.local.entity.TaskEntity
+import io.github.bigsprut.taskman.data.attachments.AttachmentDownloader
+import io.github.bigsprut.taskman.data.attachments.AttachmentRepository
+import io.github.bigsprut.taskman.data.remote.ConnectionHolder
 import io.github.bigsprut.taskman.data.repo.TaskMutationRepository
 import io.github.bigsprut.taskman.data.repo.TaskRepository
 import io.github.bigsprut.taskman.ui.editor.EditorTestTags
@@ -17,6 +20,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
+import java.io.File
+import okhttp3.OkHttpClient
 import org.junit.runner.RunWith
 
 /**
@@ -59,6 +64,17 @@ class EditorDraftRegressionTest {
         val viewModel = TaskEditorViewModel(
             tasks = tasks,
             mutations = TaskMutationRepository(api = api, reader = store, tasks = tasks),
+            attachmentsRepo = AttachmentRepository(
+                api = api,
+                store = store,
+                files = FakeLocalFileSource(),
+                tasks = tasks,
+                connection = ConnectionHolder(),
+                downloader = AttachmentDownloader(
+                    client = OkHttpClient(),
+                    cacheDirectory = File(System.getProperty("java.io.tmpdir")),
+                ),
+            ),
             store = store,
             savedState = SavedStateHandle(),
         )

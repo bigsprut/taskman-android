@@ -24,6 +24,7 @@ data class FailureTexts(
     val conflict: String,
     val malformed: String,
     val internal: String,
+    val invalidInput: String,
     /** Шаблон с `%1$d` для кода ответа сервера. */
     val httpFormat: String,
 ) {
@@ -35,6 +36,7 @@ data class FailureTexts(
         is ApiFailure.Http -> String.format(Locale.getDefault(), httpFormat, failure.code)
         is ApiFailure.Malformed -> malformed
         is ApiFailure.Internal -> internal
+        ApiFailure.InvalidInput -> invalidInput
     }
 }
 
@@ -46,5 +48,6 @@ fun rememberFailureTexts(): FailureTexts = FailureTexts(
     conflict = stringResource(R.string.error_conflict),
     malformed = stringResource(R.string.error_data),
     internal = stringResource(R.string.error_internal),
+    invalidInput = stringResource(R.string.error_invalid_input),
     httpFormat = stringResource(R.string.error_http),
 )

@@ -1,6 +1,7 @@
 package io.github.bigsprut.taskman.net
 
 import com.google.common.truth.Truth.assertThat
+import io.github.bigsprut.taskman.data.attachments.AttachmentStore
 import io.github.bigsprut.taskman.data.remote.ApiFailure
 import io.github.bigsprut.taskman.data.remote.ConnectionHolder
 import io.github.bigsprut.taskman.data.remote.NetworkFactory
@@ -10,6 +11,7 @@ import io.github.bigsprut.taskman.data.repo.StateStore
 import io.github.bigsprut.taskman.data.repo.SyncOutcome
 import io.github.bigsprut.taskman.data.repo.TaskDraftSnapshot
 import io.github.bigsprut.taskman.data.repo.TaskRepository
+import io.github.bigsprut.taskman.domain.Attachment
 import io.github.bigsprut.taskman.domain.Category
 import io.github.bigsprut.taskman.domain.Employee
 import io.github.bigsprut.taskman.domain.Tag
@@ -213,8 +215,11 @@ class NetworkContractTest {
  *
  * Своя реализация в этом пакете — чтобы тесты сети не зависели от тестовых дублёров
  * других наборов и проверяли только то, что делает репозиторий с ответом сервера.
+ *
+ * [AttachmentStore] реализуется для полноты: с Ф3 хранилище приложения отдаёт и вложения,
+ * а сетевые тесты их не читают — потоки пусты, поиск всегда `null`.
  */
-private class FakeStateStore : StateStore {
+private class FakeStateStore : StateStore, AttachmentStore {
 
     @Volatile
     var snapshot: StateSnapshot? = null
@@ -237,6 +242,11 @@ private class FakeStateStore : StateStore {
     override fun observeEmployees(): Flow<List<Employee>> = emptyFlow()
 
     override fun observeTaskHistory(taskId: String): Flow<List<TaskHistoryEntry>> = emptyFlow()
+
+    // Вложения этим тестам не нужны: сетевой слой их не читает.
+    override fun observeAttachments(taskId: String): Flow<List<Attachment>> = emptyFlow()
+
+    override suspend fun findAttachment(attachmentId: String): Attachment? = null
 
     // Черновик редактора собирается репозиторием из этой же записи; сетевым тестам не нужен.
     override suspend fun loadTaskDraft(taskId: String): TaskDraftSnapshot? = null

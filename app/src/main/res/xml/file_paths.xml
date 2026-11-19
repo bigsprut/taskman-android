@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Пути для FileProvider: внешнему просмотрщику/приложению отдаём только скачанные вложения
+  из кэша (ТЗ §5.3-Ф3: открытие PDF и шаринг наружу). Больше ничего не расшариваем.
+-->
+<paths>
+    <cache-path name="attachments" path="attachments/" />
+</paths>

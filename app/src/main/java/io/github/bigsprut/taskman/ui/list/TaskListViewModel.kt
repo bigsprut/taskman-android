@@ -4,6 +4,9 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.bigsprut.taskman.data.remote.ApiFailure
+import io.github.bigsprut.taskman.data.attachments.AttachmentOutcome
+import io.github.bigsprut.taskman.data.attachments.AttachmentRepository
+import io.github.bigsprut.taskman.data.attachments.ShareInbox
 import io.github.bigsprut.taskman.data.repo.MutationOutcome
 import io.github.bigsprut.taskman.data.repo.StateStore
 import io.github.bigsprut.taskman.data.repo.SyncStatus
@@ -37,6 +40,12 @@ sealed interface ListMessage {
     data object DeleteConflict : ListMessage
     class ToggleFailed(val failure: ApiFailure) : ListMessage
     class DeleteFailed(val failure: ApiFailure) : ListMessage
+
+    /** Не удалось приложить файлы, пришедшие через «Поделиться». */
+    class ShareAttachFailed(val failure: ApiFailure) : ListMessage
+
+    /** Файлы «Поделиться» успешно приложены к задаче (для снекбара). */
+    data object SharedFilesAttached : ListMessage
 }
 
 /**
@@ -50,6 +59,8 @@ sealed interface ListMessage {
 class TaskListViewModel(
     private val repository: TaskRepository,
     private val mutations: TaskMutationRepository,
+    private val attachments: AttachmentRepository,
+    private val shareInbox: ShareInbox,
     store: StateStore,
     private val savedState: SavedStateHandle,
 ) : ViewModel() {
@@ -149,6 +160,38 @@ class TaskListViewModel(
                 }
             } finally {
                 _pendingTaskIds.update { it - task.id }
+            }
+        }
+    }
+
+    /** Файлы, пришедшие из «Поделиться в Задачи», ждут выбора задачи (§5.3-Ф3). */
+    val sharedFiles: StateFlow<List<String>> = shareInbox.uris
+
+    fun dismissSharedFiles() {
+        shareInbox.clear()
+    }
+
+    /** Прикладывает все ожидающие файлы к выбранной задаче и очищает очередь. */
+    fun attachSharedTo(task: Task) {
+        val uris = shareInbox.uris.value
+        if (uris.isEmpty()) return
+        viewModelScope.launch {
+            var failure: ApiFailure? = null
+            for (uri in uris) {
+                when (val outcome = attachments.upload(task.id, uri)) {
+                    AttachmentOutcome.Success -> Unit
+                    is AttachmentOutcome.Failed -> {
+                        failure = outcome.failure
+                        break
+                    }
+                }
+            }
+            val error = failure
+            if (error == null) {
+                shareInbox.clear()
+                _messages.emit(ListMessage.SharedFilesAttached)
+            } else {
+                _messages.emit(ListMessage.ShareAttachFailed(error))
             }
         }
     }

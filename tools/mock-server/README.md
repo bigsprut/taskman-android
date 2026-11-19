@@ -1,29 +1,35 @@
 # Мок-сервер состояния taskman
 
 > **Это dev-инструмент для локальной разработки, а не сервер продукта.**
-> Состояние он держит в памяти и умеет три мутации клиента, но вложения, теги,
-> категории, списки, сотрудники и `/api/sync` здесь только читаются из фикстуры.
-> Никогда не запускайте его как замену настоящему серверу и не переносите его
-> значения по умолчанию (адрес, порт, токен) в продукт.
+> Состояние он держит в памяти и умеет мутации задач, вложений и сотрудников,
+> а теги, категории, списки, настройки и `/api/sync` здесь только читаются из
+> фикстуры. Никогда не запускайте его как замену настоящему серверу и не
+> переносите его значения по умолчанию (адрес, порт, токен) в продукт.
 
 Мок нужен, чтобы запускать приложение и проверять руками контракт без доступа к
 настоящему серверу владельца: авторизацию заголовком `Token`, привязку устройства
-(TOFU), `ETag`/`304`, gzip, а с Ф1 — ещё и сценарии «создать / изменить /
-выполнить / удалить задачу»:
+(TOFU), `ETag`/`304`, gzip, а с Ф1 — сценарии «создать / изменить / выполнить /
+удалить задачу», с Ф3 — вложения и справочник сотрудников:
 
 - `GET /api/state` — текущее состояние (soft-deleted задачи не попадают);
 - `POST /api/tasks` — UPSERT списка задач полным объектом с CAS по `updated_at`;
 - `POST /api/tasks/{id}/toggle` — смена статуса;
-- `DELETE /api/tasks/{id}` — soft-delete задачи и всего поддерева.
+- `DELETE /api/tasks/{id}` — soft-delete задачи и всего поддерева;
+- `POST /api/tasks/{id}/attachments` — multipart-аплоад вложения (поле `file`);
+- `GET /api/attachments/{id}?token=…` — байты файла (токен ТОЛЬКО query);
+- `DELETE /api/attachments/{id}` — soft-delete вложения;
+- `POST/PATCH/DELETE /api/employees[/{id}]` — справочник сотрудников.
 
 Фикстура читается **один раз при старте**, дальше сервер работает со своей копией
 в памяти: после перезапуска все мутации пропадают, и снова отдаётся фикстура.
+Загруженные файлы тоже живут только в памяти — на диск мок ничего не пишет.
 
 Реализация — Python 3, **только стандартная библиотека**: `pip install` не нужен.
+Multipart разбирается вручную по `boundary`: модуль `cgi` удалён в Python 3.13.
 
 ## Требования
 
-- Python 3.7+ (проверено на 3.12.8 и 3.13.11).
+- Python 3.7+ (проверено на 3.12.8 и 3.13.11 — в том числе разбор multipart без `cgi`).
 - Больше ничего: скрипт использует только `http.server`, `gzip`, `hashlib`,
   `json`, `argparse` и прочую стандартную библиотеку.
 - Windows, macOS, Linux.
@@ -92,13 +98,20 @@ py tools\mock-server\mock_state_server.py --port 18443
 | `POST /api/tasks` | `200`, `{"saved": [{id, updated_at}], "server_time"}`; `409` при конфликте версий |
 | `POST /api/tasks/{id}/toggle` | `200`, `{"id", "status", "updated_at"}`; `404` на неизвестный id |
 | `DELETE /api/tasks/{id}` | `200`, `{"deleted": id}`; `404` на неизвестный id |
+| `POST /api/tasks/{id}/attachments` | `200`, `{"id", "name", "size"}`; `400` — тело не multipart/нет поля `file`, `404` — неизвестная задача, `413` — файл больше 8 МиБ |
+| `GET /api/attachments/{id}?token=…` | `200`, байты файла, `Content-Type: <mime>`, `Content-Disposition: inline; filename="…"`; `401` — нет/неверный токен; `404` — неизвестный или удалённый id |
+| `DELETE /api/attachments/{id}` | `200`, `{"deleted": id}`; `404` — неизвестный или уже удалённый id |
+| `POST /api/employees` | `200`, `{"id", "name"}`; `400` — пустое имя |
+| `PATCH /api/employees/{id}` | `200`, обновлённая запись; `400` — пустое имя, `404` — неизвестный id |
+| `DELETE /api/employees/{id}` | `200`, `{"deleted": id}`; `404` — неизвестный id |
 | другой путь | `404`, `{"error": "not_found"}` |
 | другой метод по известному пути | `405`, `{"error": "method_not_allowed"}` + заголовок `Allow` (сверх контракта, для наглядности) |
 | `OPTIONS` | `204` с CORS-заголовками (сверх контракта, для браузерных проверок) |
 
 Сверх контракта у мутаций бывают ещё коды: `400 {"error": "bad_request"}` — битое
-тело/неизвестный статус, `413 {"error": "payload_too_large"}` — тело больше 8 МиБ,
-`500 {"error": "fixture_not_object"}` — фикстура не JSON-объект (мутации некуда
+тело/неизвестный статус/пустое имя, `413 {"error": "payload_too_large"}` — тело
+больше 8 МиБ (у аплоада ограничение относится к самому файлу), `500
+{"error": "fixture_not_object"}` — фикстура не JSON-объект (мутации некуда
 применять, чтение при этом работает как раньше).
 
 ### Авторизация
@@ -107,6 +120,11 @@ py tools\mock-server\mock_state_server.py --port 18443
 без `Token` получит `401`, как и на настоящем сервере. Имена заголовков в HTTP
 регистронезависимы, поэтому `token: ...` тоже подойдёт; важно именно имя `Token`.
 Значение токена в журнал не пишется — только `token=ok` / `token=invalid`.
+
+**Исключение — `GET /api/attachments/{id}`** (ТЗ §4): этот путь принимает токен
+**только** query-параметром `?token=…`, и заголовок `Token` он не читает. Запрос
+с заголовком, но без `token=` получит `401`; так проверяется именно тот способ,
+которым приложение (Coil/браузер) грузит картинки.
 
 Сравнение не является защитой от подбора: это локальный стенд, а не сервер.
 
@@ -125,10 +143,11 @@ python tools\mock-server\mock_state_server.py --port 18444 --device-gate 1
 
 ## Мутации
 
-Все мутации требуют тот же заголовок `Token`; тело — JSON. Состояние меняется
-только в памяти и только после успешного ответа: при `400`/`404`/`409` ничего не
-происходит. После любой успешной мутации пересчитываются `server_time` и `ETag`
-(`GET /api/state` уже отдаёт новое состояние).
+Все мутации, кроме скачивания вложения, требуют тот же заголовок `Token`; тело —
+JSON, кроме multipart-аплоада. Состояние меняется только в памяти и только после
+успешного ответа: при `400`/`404`/`409`/`413` ничего не происходит. После любой
+успешной мутации пересчитываются `server_time` и `ETag` (`GET /api/state` уже
+отдаёт новое состояние).
 
 ### `POST /api/tasks` — UPSERT
 
@@ -216,6 +235,88 @@ id или soft-deleted задача → `404 {"error": "not_found"}`.
 `DELETE` по удалённой задаче отвечают `404`. UPSERT по id удалённой задачи
 обновит запись, но `deleted` останется `1` — «воскрешения» в моке нет.
 
+### `POST /api/tasks/{id}/attachments` — аплоад вложения
+
+Тело — `multipart/form-data`, поле формы **обязательно** называется `file`
+(ТЗ §4). Заголовок `Token` обязателен, как у остальных мутаций.
+
+```powershell
+curl.exe -i -F "file=@C:\temp\photo.png" -H "Token: local-dev-token" `
+    http://127.0.0.1:8443/api/tasks/<task_id>/attachments
+```
+
+Ответ `200`:
+
+```json
+{"id": "6fcba704720e4c0f8d88e9a0e6381792", "name": "photo.png", "size": 12345}
+```
+
+- `id` — 32 hex; `name` — исходное имя файла; `size` — размер в байтах.
+- В задаче появляется запись `attachments[]`:
+  `{id, task_id, orig_name, mime, size, created_at, deleted: 0}`.
+- `mime` берётся из `Content-Type` части, которую прислал клиент; если его нет —
+  `application/octet-stream`.
+- Файл **хранится в памяти** процесса и пропадает при перезапуске: временных
+  файлов мок не пишет, чистить после остановки нечего. Вложения из фикстуры
+  отдаются заглушкой объявленного размера — самих байт фикстура не содержит.
+- Ограничение — **8 МиБ** на файл (тело запроса может быть чуть больше за счёт
+  multipart-обвязки), больше — `413 {"error": "payload_too_large"}`. Если клиент
+  шлёт `Expect: 100-continue` (curl на крупных файлах), мок отвечает `413` сразу,
+  не дожидаясь тела.
+- Неизвестный или удалённый `task_id` → `404`; тело не multipart или в нём нет
+  поля `file` → `400 {"error": "bad_request"}`.
+- `updated_at` задачи при аплоаде **не меняется**: CAS-версия после вложения
+  остаётся прежней.
+
+Разбор multipart — ручной, только стандартная библиотека: модуль `cgi` удалён в
+Python 3.13. Boundary берётся из `Content-Type`, имя файла — из `filename="…"` в
+`Content-Disposition`. Android (OkHttp) присылает имя в UTF-8, `curl.exe` на
+Windows — в системной однобайтовой кодировке; мок пробует UTF-8, а затем cp1251.
+
+### `GET /api/attachments/{id}?token=…` — скачивание
+
+Токен — **только query-параметром**; заголовок `Token` этот путь не читает
+(ТЗ §4). Успешный ответ — `200` с байтами файла, `Content-Type: <mime>` и
+`Content-Disposition: inline; filename="…"`. Не-ASCII имя в заголовке
+percent-кодируется: HTTP-заголовки не переносят кириллицу в latin-1.
+
+```powershell
+curl.exe -s -o photo.png "http://127.0.0.1:8443/api/attachments/<id>?token=local-dev-token"
+```
+
+- нет токена, неверный токен или заголовок вместо query → `401`;
+- неизвестный id, вложение с `deleted = 1` или вложение удалённой задачи → `404`;
+- gzip для файлов не применяется: байты отдаются как есть;
+- `--device-gate` на скачивание не распространяется: картинки грузятся без
+  `X-Device-Id`, счётчик «ожиданий» ими не расходуется.
+
+### `DELETE /api/attachments/{id}` — soft-delete
+
+Заголовок `Token`, как у остальных мутаций. Выставляет `deleted = 1`; ответ
+`{"deleted": "<id>"}`. В `GET /api/state` вложение пропадает. Повторный
+`DELETE` и `GET` удалённого вложения → `404`.
+
+### Справочник сотрудников
+
+Заголовок `Token`, тело — JSON `{"name": …}`. Имя обрезается по краям; пустое
+(в том числе из одних пробелов) → `400 {"error": "bad_request"}`.
+
+```powershell
+# создать: 200 {"id": "<32 hex>", "name": "Иван"}
+curl.exe -X POST -H "Token: local-dev-token" -H "Content-Type: application/json" `
+    --data-binary "@emp.json" http://127.0.0.1:8443/api/employees
+```
+
+Здесь `emp.json` — файл в UTF-8 с телом `{"name": "Иван"}`: `curl.exe` на Windows
+перекодирует аргументы командной строки в системную кодировку, а телу из файла
+ничего не грозит. Для ASCII-имени можно и `--data-binary '{"name": "Ivan"}'`.
+
+- `PATCH /api/employees/{id}` — переименование, ответ — обновлённая запись;
+- `DELETE /api/employees/{id}` — запись **исчезает** из `state.employees`,
+  ответ `{"deleted": "<id>"}`;
+- неизвестный id → `404`. Отдельного `GET /api/employees` в моке нет: список
+  приходит в `GET /api/state`.
+
 ## ETag и 304
 
 `ETag` — это md5 канонического JSON **текущего** состояния **без поля
@@ -248,11 +349,13 @@ python tools\mock-server\mock_state_server.py --port 18443 --state-out state.loc
 ```
 
 После каждой **успешной** мутации сервер пишет в файл то же состояние, что отдаёт
-`GET /api/state`: без soft-deleted задач, с текущим `server_time`, в читаемом JSON
-(UTF-8, отступ 1 пробел). Файл пишется атомарно (`*.tmp` + `os.replace`), так что
-никогда не содержит половину JSON.
+`GET /api/state`: без soft-deleted задач, с актуальным списком сотрудников, с
+текущим `server_time`, в читаемом JSON (UTF-8, отступ 1 пробел). Файл пишется
+атомарно (`*.tmp` + `os.replace`), так что никогда не содержит половину JSON.
+Байты вложений в файл не попадают — только их описания из `attachments[]`.
 
-- при старте файл не создаётся и не читается — только после первой мутации;
+- при старте файл не создаётся и не читается — только после первой мутации
+  (в том числе аплоада вложения или изменения сотрудника);
 - каталог должен существовать заранее, иначе сервер не стартует (код 2);
 - ошибка записи (например, файл занят) печатается в stderr и не ломает ответ
   клиенту;
@@ -278,11 +381,20 @@ python tools\mock-server\mock_state_server.py --port 18443 --state-out state.loc
 | `conflict` | CAS-конфликт (`409`) |
 | `toggled status=…` | успешный `toggle` |
 | `deleted tasks=N` | soft-delete, N — сколько задач попало в поддерево |
+| `attachment_upload name=… size=…` | успешный аплоад вложения |
+| `attachment_get` | успешное скачивание вложения |
+| `attachment_deleted` | soft-delete вложения |
+| `attachment_missing` | `404` при скачивании (неизвестный/удалённый id) |
+| `attachment_too_large` | `413` — файл больше 8 МиБ |
+| `employee_created` / `employee_updated` / `employee_deleted` | справочник сотрудников |
 | `not_found`, `bad_request`, `unauthorized`, `method_not_allowed` … | отказы |
 | `preflight` | `OPTIONS` |
 
-Токен в журнал не попадает. При перенаправлении вывода в файл журнал пишется в UTF-8.
-Служебные сообщения (ошибки разбора запроса, проблемы `--state-out`) идут в stderr.
+Токен в журнал не попадает. В пути запроса значение query-параметра `token`
+маскируется, поэтому строка скачивания выглядит как
+`GET /api/attachments/<id>?token=***`. При перенаправлении вывода в файл журнал
+пишется в UTF-8. Служебные сообщения (ошибки разбора запроса, проблемы
+`--state-out`) идут в stderr.
 
 ## Ручные проверки
 
@@ -392,6 +504,49 @@ curl.exe -s --compressed -H "Token: local-dev-token" http://127.0.0.1:8443/api/s
 curl.exe -i -X DELETE -H "Token: local-dev-token" http://127.0.0.1:8443/api/tasks/<id>  # {"deleted": "<id>"}
 ```
 
+### Сценарий Ф3: вложение и сотрудники
+
+Мок на порту 18600 с `--token local-dev-token`; `<task_id>` — id из `/api/state`.
+
+```powershell
+$base = 'http://127.0.0.1:18600'
+$taskId = '340c5a71af6f48d389b6e8bd2ecaa8ff'
+
+# 1) аплоад: поле формы обязательно file -> 200 {"id","name","size"}
+'hello attachments' | Set-Content "$env:TEMP\mock-attach.txt" -NoNewline
+$up = curl.exe -s -F "file=@$env:TEMP\mock-attach.txt" `
+    -H "Token: local-dev-token" "$base/api/tasks/$taskId/attachments" | ConvertFrom-Json
+$up.id; $up.name; $up.size              # <32 hex>; mock-attach.txt; 17
+
+# 2) вложение в состоянии, ETag сменился
+$state = Invoke-RestMethod "$base/api/state" -Headers @{ Token = 'local-dev-token' }
+($state.tasks | Where-Object id -eq $taskId).attachments | Where-Object id -eq $up.id
+
+# 3) скачивание: только ?token= -> 200 и те же байты
+curl.exe -s -o "$env:TEMP\mock-downloaded.txt" "$base/api/attachments/$($up.id)?token=local-dev-token"
+(Get-FileHash "$env:TEMP\mock-downloaded.txt").Hash -eq (Get-FileHash "$env:TEMP\mock-attach.txt").Hash  # True
+curl.exe -s -o NUL -w "%{http_code}`n" "$base/api/attachments/$($up.id)"                               # 401
+curl.exe -s -o NUL -w "%{http_code}`n" -H "Token: local-dev-token" "$base/api/attachments/$($up.id)"   # 401
+
+# 4) удаление: 200, повторный GET -> 404
+curl.exe -s -X DELETE -H "Token: local-dev-token" "$base/api/attachments/$($up.id)"
+curl.exe -s -o NUL -w "%{http_code}`n" "$base/api/attachments/$($up.id)?token=local-dev-token"          # 404
+
+# 5) сотрудники: создать, переименовать, удалить
+'{"name": "  Иван  "}' | Set-Content "$env:TEMP\emp.json" -Encoding utf8
+$emp = curl.exe -s --data-binary "@$env:TEMP\emp.json" -H "Content-Type: application/json" `
+    -H "Token: local-dev-token" "$base/api/employees" | ConvertFrom-Json
+$emp.name                                  # Иван (имя обрезано по краям)
+'{"name": "Иван Петров"}' | Set-Content "$env:TEMP\emp2.json" -Encoding utf8
+curl.exe -s -X PATCH --data-binary "@$env:TEMP\emp2.json" -H "Content-Type: application/json" `
+    -H "Token: local-dev-token" "$base/api/employees/$($emp.id)"            # обновлённая запись
+curl.exe -s -X DELETE -H "Token: local-dev-token" "$base/api/employees/$($emp.id)"  # {"deleted": "<id>"}
+```
+
+Ожидаемые коды: аплоад и скачивание — `200`; без токена и с заголовком вместо
+query — `401`; после удаления — `404`; пустое имя сотрудника — `400`; неизвестный
+id сотрудника — `404`; файл больше 8 МиБ — `413`.
+
 ## Что можно проверить руками в приложении
 
 - вход с токеном `local-dev-token`; неверный токен → экран входа (401);
@@ -410,6 +565,15 @@ curl.exe -i -X DELETE -H "Token: local-dev-token" http://127.0.0.1:8443/api/task
 - конфликт версий: можно смоделировать руками — обновить задачу в приложении,
   затем отправить `POST /api/tasks` с прежним `updated_at` (например, из PowerShell
   по сценарию выше) и увидеть `409` и реакцию клиента;
+- **аплоад вложения**: выбрать файл/картинку в задаче (или «Поделиться в Задачи»)
+  → после `POST /api/tasks/{id}/attachments` запись есть в `/api/state`, в журнале
+  `result=attachment_upload name=… size=…`;
+- **превью картинки**: картинка грузится по `GET /api/attachments/{id}?token=…`
+  (в журнале `?token=***` и `result=attachment_get`); без токена — `401`;
+- **удаление вложения**: вложение исчезает из задачи и из `/api/state`, повторное
+  удаление и скачивание дают `404`;
+- **сотрудники**: создание/переименование/удаление в приложении отражается в
+  `state.employees`; пустое имя → `400`, неизвестный id → `404`;
 - недоступный сервер: остановите мок и посмотрите, как приложение показывает ошибку;
 - `--state-out` — открыть файл после мутаций и сравнить с `GET /api/state`.
 
@@ -417,24 +581,31 @@ curl.exe -i -X DELETE -H "Token: local-dev-token" http://127.0.0.1:8443/api/task
 
 - **Состояние только в памяти**: перезапуск возвращает фикстуру, история мутаций
   не сохраняется.
-- Мутаций ровно три: `POST /api/tasks`, `POST /api/tasks/{id}/toggle`,
-  `DELETE /api/tasks/{id}`. Вложений (multipart), `/api/tags`, `/api/categories`,
-  `/api/lists`, `/api/employees`, `/api/settings` и `/api/sync` нет — эти данные
-  только читаются из фикстуры.
+- Мутации: `POST /api/tasks` (UPSERT + CAS), `POST /api/tasks/{id}/toggle`,
+  `DELETE /api/tasks/{id}`, `POST /api/tasks/{id}/attachments`,
+  `GET`/`DELETE /api/attachments/{id}`, `POST/PATCH/DELETE /api/employees[/{id}]`.
+  `/api/tags`, `/api/categories`, `/api/lists`, `/api/settings` и `/api/sync`
+  по-прежнему только читаются из фикстуры.
+- **Байты вложений живут в памяти процесса**: после перезапуска они пропадают,
+  на диск мок ничего не пишет и при остановке чистить нечего. Вложения из
+  фикстуры отдаются заглушкой объявленного размера — настоящих байт в фикстуре нет.
 - Ссылочная целостность не проверяется: id списка, категории и тегов мок
   принимает как есть, даже если такого объекта в фикстуре нет.
 - «Воскрешения» soft-deleted задачи нет: UPSERT сохраняет `deleted = 1`.
 - Файл `--state-out` — снимок, а не вход: сервер его не читает и не восстанавливает
-  из него состояние.
-- `--device-gate` — глобальный счётчик запросов, а не проверка `X-Device-Id`.
+  из него состояние. Байты вложений в него не попадают.
+- `--device-gate` — глобальный счётчик запросов, а не проверка `X-Device-Id`;
+  скачивание вложений по `?token=` его не расходует.
 - Тело запроса читается по `Content-Length`; chunked-тела не поддерживаются
-  (Retrofit/OkHttp и curl по умолчанию шлют длину). Потолок — 8 МиБ.
+  (Retrofit/OkHttp и curl по умолчанию шлют длину). Потолок JSON-тела — 8 МиБ;
+  у аплоада 8 МиБ относится к файлу, плюс до 64 КиБ на multipart-обвязку.
 - Префикс пути в base URL (`http://host:port/prefix`) не поддерживается: запрос
   `/prefix/api/state` получит `404`.
 - `405`, `OPTIONS`, `400`, `413`, `500 fixture_not_object` — ответы сверх
   описанного контракта, добавлены для удобства и диагностики.
 - Мок не заменяет интеграционные тесты и не проверяет серверную логику: он лишь
-  воспроизводит формат ответа и коды.
+  воспроизводит формат ответа и коды. В частности, `updated_at` задачи при
+  аплоаде вложения не меняется, а у сотрудников нет версий/истории.
 - Android: cleartext `http://` в release-сборке запрещён; debug-сборка такой адрес
   разрешает. Если запрос не уходит, ищите причину в настройках сети приложения
   (`app/**`), а не в моке.
@@ -446,6 +617,10 @@ curl.exe -i -X DELETE -H "Token: local-dev-token" http://127.0.0.1:8443/api/task
   настоящие токены и не коммитьте их.
 - `--host 0.0.0.0` открывает стенд всей локальной сети: только на время проверки
   и только в доверенной сети.
-- В журнал не попадает значение токена; попадают пути запросов.
+- В журнал не попадает значение токена: печатается только `token=ok/invalid`, а
+  query-параметр `token` в пути маскируется как `?token=***`.
+- `GET /api/attachments/{id}?token=…` по контракту несёт токен в URL: он может
+  осесть в истории браузера, прокси или логах клиента. Для dev-стенда это
+  допустимо, но настоящий токен так гонять не стоит.
 - `--state-out` содержит задачи из фикстуры и ваши тестовые правки: не кладите
   туда секреты и не коммитьте файл.

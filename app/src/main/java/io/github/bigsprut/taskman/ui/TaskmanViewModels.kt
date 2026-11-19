@@ -7,6 +7,7 @@ import io.github.bigsprut.taskman.di.AppContainer
 import io.github.bigsprut.taskman.ui.editor.TaskEditorViewModel
 import io.github.bigsprut.taskman.ui.list.TaskListViewModel
 import io.github.bigsprut.taskman.ui.session.SessionViewModel
+import io.github.bigsprut.taskman.ui.settings.SettingsViewModel
 
 /**
  * Фабрики ViewModel для ручного DI.
@@ -32,6 +33,8 @@ object TaskmanViewModels {
             TaskListViewModel(
                 repository = container.taskRepository,
                 mutations = container.taskMutationRepository,
+                attachments = container.attachmentRepository,
+                shareInbox = container.shareInbox,
                 store = container.catalogStore,
                 savedState = createSavedStateHandle(),
             )
@@ -43,8 +46,18 @@ object TaskmanViewModels {
             TaskEditorViewModel(
                 tasks = container.taskRepository,
                 mutations = container.taskMutationRepository,
+                attachmentsRepo = container.attachmentRepository,
                 store = container.catalogStore,
                 savedState = createSavedStateHandle(),
+            )
+        }
+    }
+
+    fun settings(container: AppContainer) = viewModelFactory {
+        initializer {
+            SettingsViewModel(
+                employees = container.employeeRepository,
+                store = container.catalogStore,
             )
         }
     }

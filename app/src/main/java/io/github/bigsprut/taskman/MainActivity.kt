@@ -1,10 +1,13 @@
 package io.github.bigsprut.taskman
 
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.Composable
+import androidx.core.content.IntentCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.bigsprut.taskman.ui.AppRoot
@@ -12,6 +15,7 @@ import io.github.bigsprut.taskman.ui.TaskmanViewModels
 import io.github.bigsprut.taskman.ui.editor.TaskEditorViewModel
 import io.github.bigsprut.taskman.ui.list.TaskListViewModel
 import io.github.bigsprut.taskman.ui.session.SessionViewModel
+import io.github.bigsprut.taskman.ui.settings.SettingsViewModel
 import io.github.bigsprut.taskman.ui.theme.TaskmanTheme
 
 /**
@@ -19,6 +23,9 @@ import io.github.bigsprut.taskman.ui.theme.TaskmanTheme
  *
  * Edge-to-edge включён (ТЗ §5.2), splash — core-splashscreen; фон окна задан XML-темой,
  * чтобы первый кадр не мигал белым в тёмной теме.
+ *
+ * Здесь же принимается «Поделиться в Задачи» (`ACTION_SEND` / `ACTION_SEND_MULTIPLE`):
+ * uri складываются в общую очередь, а выбор задачи и загрузку делает UI.
  */
 class MainActivity : ComponentActivity() {
 
@@ -28,6 +35,8 @@ class MainActivity : ComponentActivity() {
         installSplashScreen()
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        handleIncomingShare(intent)
 
         val container = (application as TaskmanApp).container
         val allowCleartextBaseUrl = BuildConfig.DEBUG
@@ -39,6 +48,31 @@ class MainActivity : ComponentActivity() {
                     allowCleartextBaseUrl = allowCleartextBaseUrl,
                 )
             }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIncomingShare(intent)
+    }
+
+    /** Достаёт uri из `ACTION_SEND` / `ACTION_SEND_MULTIPLE` и складывает в общую очередь. */
+    private fun handleIncomingShare(intent: Intent?) {
+        val uris: List<String> = when (intent?.action) {
+            Intent.ACTION_SEND -> listOfNotNull(
+                IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java),
+            ).map(Uri::toString)
+
+            Intent.ACTION_SEND_MULTIPLE -> IntentCompat
+                .getParcelableArrayListExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
+                ?.map(Uri::toString)
+                .orEmpty()
+
+            else -> emptyList()
+        }
+        if (uris.isNotEmpty()) {
+            (application as TaskmanApp).container.shareInbox.add(uris)
         }
     }
 }
@@ -57,10 +91,14 @@ private fun TaskmanAppContent(
     val editorViewModel: TaskEditorViewModel = viewModel(
         factory = TaskmanViewModels.taskEditor(container),
     )
+    val settingsViewModel: SettingsViewModel = viewModel(
+        factory = TaskmanViewModels.settings(container),
+    )
 
     AppRoot(
         sessionViewModel = sessionViewModel,
         taskListViewModel = taskListViewModel,
         editorViewModel = editorViewModel,
+        settingsViewModel = settingsViewModel,
     )
 }

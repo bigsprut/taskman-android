@@ -4,15 +4,21 @@ import androidx.lifecycle.SavedStateHandle
 import com.google.common.truth.Truth.assertThat
 import io.github.bigsprut.taskman.data.remote.ApiFailure
 import io.github.bigsprut.taskman.data.remote.TaskmanJson
+import io.github.bigsprut.taskman.data.attachments.AttachmentDownloader
+import io.github.bigsprut.taskman.data.attachments.AttachmentRepository
+import io.github.bigsprut.taskman.data.remote.ConnectionHolder
 import io.github.bigsprut.taskman.data.repo.TaskMutationRepository
 import io.github.bigsprut.taskman.data.repo.TaskRepository
 import io.github.bigsprut.taskman.domain.TaskDraft
 import io.github.bigsprut.taskman.domain.TaskStatus
 import io.github.bigsprut.taskman.testutil.FakeStateStore
+import io.github.bigsprut.taskman.testutil.FakeLocalFileSource
 import io.github.bigsprut.taskman.testutil.FakeTaskmanApi
 import io.github.bigsprut.taskman.testutil.errorResponseOf
 import io.github.bigsprut.taskman.testutil.taskEntity
+import java.io.File
 import java.io.IOException
+import okhttp3.OkHttpClient
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -52,6 +58,14 @@ class TaskEditorViewModelTest {
 
     /** Состояние экрана, которое переживает поворот и убивание процесса. */
     private val savedState = SavedStateHandle()
+private val attachmentsRepo = AttachmentRepository(
+    api = api,
+    store = store,
+    files = FakeLocalFileSource(),
+    tasks = tasks,
+    connection = ConnectionHolder(),
+    downloader = AttachmentDownloader(OkHttpClient(), File(System.getProperty("java.io.tmpdir"))),
+)
 
     /** Задача в локальном снапшоте — тот же объект, из которого собирается payload (§4). */
     private val entity = taskEntity(
@@ -361,6 +375,7 @@ class TaskEditorViewModelTest {
     private fun newViewModel(handle: SavedStateHandle = savedState) = TaskEditorViewModel(
         tasks = tasks,
         mutations = mutations,
+        attachmentsRepo = attachmentsRepo,
         store = store,
         savedState = handle,
     )

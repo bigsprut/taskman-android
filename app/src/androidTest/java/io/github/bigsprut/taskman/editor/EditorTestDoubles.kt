@@ -1,8 +1,16 @@
 package io.github.bigsprut.taskman.editor
 
 import io.github.bigsprut.taskman.data.local.entity.TaskEntity
+import io.github.bigsprut.taskman.data.attachments.AttachmentStore
+import io.github.bigsprut.taskman.data.attachments.LocalFile
+import io.github.bigsprut.taskman.data.attachments.LocalFileSource
 import io.github.bigsprut.taskman.data.remote.TaskmanApi
+import io.github.bigsprut.taskman.data.remote.dto.AttachmentUploadResponse
+import io.github.bigsprut.taskman.data.remote.dto.DeleteAttachmentResponse
+import io.github.bigsprut.taskman.data.remote.dto.DeleteEmployeeResponse
 import io.github.bigsprut.taskman.data.remote.dto.DeleteTaskResponse
+import io.github.bigsprut.taskman.data.remote.dto.EmployeeInDto
+import io.github.bigsprut.taskman.data.remote.dto.EmployeeResponse
 import io.github.bigsprut.taskman.data.remote.dto.SavedTaskDto
 import io.github.bigsprut.taskman.data.remote.dto.StateResponse
 import io.github.bigsprut.taskman.data.remote.dto.TaskInDto
@@ -11,6 +19,7 @@ import io.github.bigsprut.taskman.data.repo.StateSnapshot
 import io.github.bigsprut.taskman.data.repo.StateStore
 import io.github.bigsprut.taskman.data.repo.TaskDraftSnapshot
 import io.github.bigsprut.taskman.data.repo.TaskSnapshotReader
+import io.github.bigsprut.taskman.domain.Attachment
 import io.github.bigsprut.taskman.domain.Category
 import io.github.bigsprut.taskman.domain.Employee
 import io.github.bigsprut.taskman.domain.Tag
@@ -45,12 +54,32 @@ internal class FakeApi : TaskmanApi {
     override suspend fun deleteTask(id: String): Response<DeleteTaskResponse> =
         Response.success(DeleteTaskResponse(deleted = id))
 
+    override suspend fun uploadAttachment(
+        taskId: String,
+        file: okhttp3.MultipartBody.Part,
+    ): Response<AttachmentUploadResponse> =
+        Response.success(AttachmentUploadResponse(id = "att-1", name = "file", size = 0))
+
+    override suspend fun deleteAttachment(id: String): Response<DeleteAttachmentResponse> =
+        Response.success(DeleteAttachmentResponse(deleted = id))
+
+    override suspend fun createEmployee(body: EmployeeInDto): Response<EmployeeResponse> =
+        Response.success(EmployeeResponse(id = "emp-1", name = body.name))
+
+    override suspend fun updateEmployee(
+        id: String,
+        body: EmployeeInDto,
+    ): Response<EmployeeResponse> = Response.success(EmployeeResponse(id = id, name = body.name))
+
+    override suspend fun deleteEmployee(id: String): Response<DeleteEmployeeResponse> =
+        Response.success(DeleteEmployeeResponse(deleted = id))
+
     companion object {
         const val SERVER_TIME = 1_765_843_200.0
     }
 }
 
-internal class FakeStore : StateStore, TaskSnapshotReader {
+internal class FakeStore : StateStore, TaskSnapshotReader, AttachmentStore {
 
     val tasksFlow = MutableStateFlow<List<Task>>(emptyList())
     private val entities = mutableMapOf<String, TaskEntity>()
@@ -93,6 +122,11 @@ internal class FakeStore : StateStore, TaskSnapshotReader {
         return TaskDraftSnapshot(entity = entity, tagIds = tagsByTask[taskId].orEmpty())
     }
 
+    override fun observeAttachments(taskId: String): Flow<List<Attachment>> =
+        MutableStateFlow(emptyList())
+
+    override suspend fun findAttachment(attachmentId: String): Attachment? = null
+
     override suspend fun clear() {
         entities.clear()
         tasksFlow.value = emptyList()
@@ -101,4 +135,8 @@ internal class FakeStore : StateStore, TaskSnapshotReader {
     override suspend fun taskEntity(id: String): TaskEntity? = entities[id]
 
     override suspend fun tagIds(taskId: String): List<String> = tagsByTask[taskId].orEmpty()
+}
+/** Пустой источник файлов: в UI-тесте вложения не читаются. */
+internal class FakeLocalFileSource : LocalFileSource {
+    override suspend fun read(uri: String): LocalFile? = null
 }

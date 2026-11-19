@@ -72,6 +72,7 @@
     <string name="error_http">Сервер ответил ошибкой %1$d</string>
     <string name="error_data">Сервер вернул данные в неизвестном формате</string>
     <string name="error_internal">Внутренняя ошибка приложения — попробуйте ещё раз</string>
+    <string name="error_invalid_input">Значение недопустимо: введите непустое имя</string>
 
     <!-- Фильтры (Ф1): у каждой группы чипов обязательна читаемая подпись (§5.3) -->
     <string name="filter_status_label">Статус</string>
@@ -132,4 +133,32 @@
     <string name="editor_save_failed">Не удалось сохранить изменения</string>
     <string name="editor_subtask_failed">Не удалось изменить подзадачу</string>
     <string name="editor_loading">Загрузка…</string>
-    <string name="cd_editor_close">Закрыть редактор</string></resources>
+    <string name="cd_editor_close">Закрыть редактор</string>    <!-- Вложения (Ф3) -->
+    <string name="editor_attachments">Вложения</string>
+    <string name="editor_attachment_add_photo">Фото</string>
+    <string name="editor_attachment_add_file">Файл</string>
+    <string name="editor_attachment_delete">Удалить вложение</string>
+    <string name="editor_attachment_open">Открыть</string>
+    <string name="editor_attachment_share">Поделиться</string>
+    <string name="editor_attachment_empty">Вложений нет</string>
+    <string name="editor_attachment_failed">Не удалось изменить вложение</string>
+    <string name="attachment_open_failed">Не удалось открыть файл: нет подходящего приложения</string>
+
+    <!-- «Поделиться в Задачи» -->
+    <string name="share_pick_task_title">Приложить к задаче</string>
+    <string name="share_pick_task_text">Получено файлов: %1$d. Выберите задачу.</string>
+    <string name="share_attached">Файлы приложены к задаче</string>
+    <string name="share_attach_failed">Не удалось приложить файлы</string>
+    <string name="share_no_tasks">В списке нет задач — сначала создайте задачу в другом клиенте</string>
+
+    <!-- Сотрудники (Ф3) -->
+    <string name="settings_employees">Сотрудники</string>
+    <string name="settings_employee_add">Добавить</string>
+    <string name="settings_employee_name">Имя сотрудника</string>
+    <string name="settings_employee_rename">Переименовать</string>
+    <string name="settings_employee_remove">Удалить</string>
+    <string name="settings_employee_delete_title">Удалить сотрудника?</string>
+    <string name="settings_employee_delete_text">«%1$s» будет удалён из справочника. Имена, уже указанные в задачах, не изменятся.</string>
+    <string name="settings_employee_failed">Не удалось изменить справочник сотрудников</string>
+    <string name="common_save">Сохранить</string>
+    <string name="common_cancel">Отмена</string></resources>

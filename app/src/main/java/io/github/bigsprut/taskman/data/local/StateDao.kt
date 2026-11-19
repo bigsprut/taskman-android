@@ -80,6 +80,13 @@ interface StateDao {
     @Query("SELECT * FROM employees ORDER BY name")
     fun observeEmployeeCatalog(): Flow<List<EmployeeEntity>>
 
+    /** Метаданные вложений задачи (Ф3): превью и список в редакторе. */
+    @Query("SELECT * FROM attachments WHERE taskId = :taskId AND deleted = 0 ORDER BY createdAt")
+    fun observeAttachments(taskId: String): Flow<List<AttachmentEntity>>
+
+    @Query("SELECT * FROM attachments WHERE id = :id")
+    suspend fun findAttachment(id: String): AttachmentEntity?
+
     /** История статусов задачи — блок «История» в редакторе. */
     @Query("SELECT * FROM task_history WHERE taskId = :taskId ORDER BY ts DESC")
     fun observeTaskHistory(taskId: String): Flow<List<TaskStatusHistoryEntity>>

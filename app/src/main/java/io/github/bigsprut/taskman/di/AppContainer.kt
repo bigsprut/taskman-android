@@ -2,10 +2,14 @@ package io.github.bigsprut.taskman.di
 
 import android.content.Context
 import io.github.bigsprut.taskman.BuildConfig
+import io.github.bigsprut.taskman.data.attachments.AttachmentDownloader
+import io.github.bigsprut.taskman.data.attachments.AttachmentRepository
+import io.github.bigsprut.taskman.data.attachments.ContentResolverFileSource
 import io.github.bigsprut.taskman.data.local.TaskmanDatabase
 import io.github.bigsprut.taskman.data.remote.ConnectionHolder
 import io.github.bigsprut.taskman.data.remote.NetworkFactory
 import io.github.bigsprut.taskman.data.repo.DatabaseStateStore
+import io.github.bigsprut.taskman.data.repo.EmployeeRepository
 import io.github.bigsprut.taskman.data.repo.StateStore
 import io.github.bigsprut.taskman.data.repo.TaskMutationRepository
 import io.github.bigsprut.taskman.data.repo.TaskRepository
@@ -17,9 +21,9 @@ import io.github.bigsprut.taskman.data.settings.taskmanSettingsDataStore
 /**
  * Ручной DI-контейнер приложения.
  *
- * Почему не Hilt: один модуль и три-четыре зависимости — аннотационный процессор даёт больше
+ * Почему не Hilt: один модуль и несколько зависимостей — аннотационный процессор даёт больше
  * сборочной магии, чем пользы; решение и аргументы зафиксированы в `PHASE-REPORT.md` (ТЗ §5.1
- * требует обосновать выбор). Если к Ф4 граф вырастет, переход на Hilt — отдельный PR.
+ * требует обосновать выбор). Если граф вырастет, переход на Hilt — отдельный PR.
  */
 class AppContainer(context: Context) {
 
@@ -65,4 +69,29 @@ class AppContainer(context: Context) {
             tasks = taskRepository,
         )
     }
+
+    val employeeRepository: EmployeeRepository by lazy {
+        EmployeeRepository(api = network.api, tasks = taskRepository)
+    }
+
+    /** Вложения: аплоад/удаление/скачивание (Ф3). */
+    val attachmentRepository: AttachmentRepository by lazy {
+        AttachmentRepository(
+            api = network.api,
+            store = databaseStateStore,
+            files = ContentResolverFileSource(applicationContext),
+            tasks = taskRepository,
+            connection = connectionHolder,
+            downloader = AttachmentDownloader(
+                client = network.fileClient(),
+                cacheDirectory = applicationContext.cacheDir,
+            ),
+        )
+    }
+
+    /** Очередь файлов из «Поделиться в Задачи» (Ф3). */
+    val shareInbox = io.github.bigsprut.taskman.data.attachments.ShareInbox()
+
+    /** Клиент без интерсептора — для Coil-превью по ссылке с токеном в query. */
+    val fileHttpClient get() = network.fileClient()
 }

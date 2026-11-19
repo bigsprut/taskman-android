@@ -165,6 +165,8 @@ internal class FakeStore : StateStore, TaskSnapshotReader, AttachmentStore {
 
     override suspend fun findAttachment(attachmentId: String): Attachment? = null
 
+    override suspend fun firstListId(): String? = "list-1"
+
     override fun observeDefaultCategoryId(): Flow<String?> = MutableStateFlow(null)
 
     override suspend fun loadExportSnapshot(): ExportSnapshot = ExportSnapshot()

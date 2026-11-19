@@ -236,15 +236,5 @@ class SessionViewModel(
         _connection.value = ConnectionUiModel(persisted.baseUrl, persisted.deviceId)
     }
 
-    private fun ApiFailure.toLoginError(): LoginError = when (this) {
-        is ApiFailure.Http -> LoginError.Http(code)
-        is ApiFailure.Network -> LoginError.Network
-        is ApiFailure.Malformed -> LoginError.UnexpectedData
-        is ApiFailure.Conflict -> LoginError.UnexpectedData
-        is ApiFailure.Internal -> LoginError.UnexpectedData
-        ApiFailure.InvalidInput -> LoginError.UnexpectedData
-        ApiFailure.FileAccess -> LoginError.UnexpectedData
-        ApiFailure.Unauthorized -> LoginError.Unauthorized
-        ApiFailure.DeviceNotApproved -> LoginError.Network
-    }
+
 }

@@ -8,7 +8,16 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.material.icons.Icons
@@ -86,6 +95,8 @@ fun MainScreen(
     modifier: Modifier = Modifier,
 ) {
     var selectedTab by rememberSaveable { mutableIntStateOf(TAB_TASKS) }
+    // Явное создание задачи из списка (§5.3-Ф2): FAB «+».
+    var showCreateTask by rememberSaveable { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     // Context нужен только для запуска внешних Intent (открытие/шаринг вложений).
     val context = LocalContext.current
@@ -154,6 +165,8 @@ fun MainScreen(
     val shareAttachedText = stringResource(R.string.share_attached)
     val savedLocallyText = stringResource(R.string.saved_locally)
     val syncedText = stringResource(R.string.sync_done)
+    val taskCreatedText = stringResource(R.string.task_created)
+    val createTaskFailedText = stringResource(R.string.create_task_failed)
 
     // Если данные есть (из Room), ошибку синхронизации показываем снекбаром и не стираем
     // список с экрана: «нет сети» не означает «нет данных».
@@ -178,6 +191,9 @@ fun MainScreen(
                 ListMessage.SharedFilesAttached -> shareAttachedText
                 ListMessage.SavedLocally -> savedLocallyText
                 ListMessage.Synced -> syncedText
+                ListMessage.TaskCreated -> taskCreatedText
+                is ListMessage.CreateTaskFailed ->
+                    "$createTaskFailedText: ${failureTexts.describe(message.failure)}"
             }
             snackbarHostState.showSnackbar(text)
         }
@@ -275,8 +291,17 @@ fun MainScreen(
                 )
             }
         },
-        snackbarHost = { SnackbarHost(snackbarHostState) },
-        containerColor = MaterialTheme.colorScheme.background,
+        floatingActionButton = {
+            if (selectedTab == TAB_TASKS) {
+                FloatingActionButton(onClick = { showCreateTask = true }) {
+                    Icon(
+                        imageVector = Icons.Filled.Add,
+                        contentDescription = stringResource(R.string.action_create_task),
+                    )
+                }
+            }
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) },        containerColor = MaterialTheme.colorScheme.background,
     ) { contentPadding ->
         Box(Modifier.padding(contentPadding)) {
             when (selectedTab) {
@@ -332,8 +357,17 @@ fun MainScreen(
 
     TaskEditorSheet(viewModel = editorViewModel)
 
-    if (sharedFiles.isNotEmpty()) {
-        ShareTargetDialog(
+    if (showCreateTask) {
+        CreateTaskDialog(
+            onCreate = { title ->
+                taskListViewModel.createTask(title)
+                showCreateTask = false
+            },
+            onDismiss = { showCreateTask = false },
+        )
+    }
+
+    if (sharedFiles.isNotEmpty()) {        ShareTargetDialog(
             tasks = rows.map { it.task }.distinctBy { it.id },
             text = shareDialogText,
             onPick = taskListViewModel::attachSharedTo,
@@ -383,6 +417,55 @@ private fun ShareTargetDialog(
         },
         confirmButton = {
             TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) }
+        },
+    )
+}
+/**
+ * Быстрое создание задачи из списка (§5.3-Ф2): только название, остальное — дефолты
+ * сервера (категория по умолчанию из настроек, статус «Создана», первый список).
+ */
+@Composable
+private fun CreateTaskDialog(
+    onCreate: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var title by rememberSaveable { mutableStateOf("") }
+    val focusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(Unit) {
+        focusRequester.requestFocus()
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.create_task_title)) },
+        text = {
+            OutlinedTextField(
+                value = title,
+                onValueChange = { title = it },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .focusRequester(focusRequester),
+                label = { Text(stringResource(R.string.create_task_field)) },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(
+                    onDone = { if (title.isNotBlank()) onCreate(title) },
+                ),
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { if (title.isNotBlank()) onCreate(title) },
+                enabled = title.isNotBlank(),
+            ) {
+                Text(stringResource(R.string.create_task_confirm))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.common_cancel))
+            }
         },
     )
 }

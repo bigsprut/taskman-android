@@ -53,6 +53,12 @@ sealed interface ListMessage {
 
     /** Очередь отправлена вручную кнопкой «Отправить сейчас» (Q18). */
     data object Synced : ListMessage
+
+    /** Задача создана (Ф2: явное создание из списка). */
+    data object TaskCreated : ListMessage
+
+    /** Не удалось создать задачу — текст подбирает UI. */
+    class CreateTaskFailed(val failure: ApiFailure) : ListMessage
 }
 
 /**
@@ -190,6 +196,22 @@ class TaskListViewModel(
 
     fun dismissSharedFiles() {
         shareInbox.clear()
+    }
+
+    /**
+     * Создание задачи из списка (§5.3-Ф2): `id` выдаёт сервер, поэтому офлайн-очередь не
+     * применяется — при сетевом сбое показываем сообщение.
+     */
+    fun createTask(title: String) {
+        if (title.isBlank()) return
+        viewModelScope.launch {
+            when (val outcome = mutations.createTask(title)) {
+                MutationOutcome.Success -> _messages.emit(ListMessage.TaskCreated)
+                MutationOutcome.Queued -> _messages.emit(ListMessage.SavedLocally)
+                is MutationOutcome.Conflict -> _messages.emit(ListMessage.ToggleConflict)
+                is MutationOutcome.Failed -> _messages.emit(ListMessage.CreateTaskFailed(outcome.failure))
+            }
+        }
     }
 
     /** «Отправить сейчас»: не ждём backoff воркера (Q18). */

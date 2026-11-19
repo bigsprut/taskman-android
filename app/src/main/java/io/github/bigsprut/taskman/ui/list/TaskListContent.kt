@@ -61,6 +61,7 @@ fun TaskListContent(
     onToggleCompleted: (Task, Boolean) -> Unit,
     onToggleExpanded: (Task) -> Unit,
     onDeleteConfirmed: (Task) -> Unit,
+    onOpenTask: (Task) -> Unit,
     onRefresh: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -136,6 +137,7 @@ fun TaskListContent(
                             onToggleCompleted = onToggleCompleted,
                             onToggleExpanded = onToggleExpanded,
                             onDeleteRequest = { task -> taskPendingDeletion = task },
+                            onOpen = onOpenTask,
                         )
                     }
                 }

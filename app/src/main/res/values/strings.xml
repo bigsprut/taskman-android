@@ -104,4 +104,32 @@
     <string name="conflict_delete">Задачу уже изменили на другом устройстве — список обновлён</string>
     <string name="toggle_failed">Не удалось изменить статус задачи</string>
     <string name="delete_failed">Не удалось удалить задачу</string>
-</resources>
+    <!-- Редактор задачи (Ф2) -->
+    <string name="editor_title_edit">Редактор задачи</string>
+    <string name="editor_field_title">Название</string>
+    <string name="editor_field_content">Описание</string>
+    <string name="editor_content_preview">Просмотр</string>
+    <string name="editor_content_edit">Ввод</string>
+    <string name="editor_field_status">Статус</string>
+    <string name="editor_status_date">Дата статуса (задним числом)</string>
+    <string name="editor_status_date_unset">Не задана</string>
+    <string name="editor_history">История</string>
+    <string name="editor_history_empty">История пуста</string>
+    <string name="editor_field_category">Категория</string>
+    <string name="editor_field_tags">Теги</string>
+    <string name="editor_field_employee">Сотрудник</string>
+    <string name="editor_field_created">Дата создания</string>
+    <string name="editor_subtasks">Подзадачи</string>
+    <string name="editor_subtask_new">Новая подзадача</string>
+    <string name="editor_subtask_add">Добавить</string>
+    <string name="editor_subtask_delete">Удалить подзадачу</string>
+    <string name="editor_done">Готово</string>
+    <string name="editor_saving">Сохраняем…</string>
+    <string name="editor_pick_date">Выбрать дату</string>
+    <string name="editor_clear_date">Убрать дату</string>
+    <string name="editor_cancel">Отмена</string>
+    <string name="editor_save_conflict">Задачу изменили на другом устройстве — изменения не сохранены, закройте и откройте заново</string>
+    <string name="editor_save_failed">Не удалось сохранить изменения</string>
+    <string name="editor_subtask_failed">Не удалось изменить подзадачу</string>
+    <string name="editor_loading">Загрузка…</string>
+    <string name="cd_editor_close">Закрыть редактор</string></resources>

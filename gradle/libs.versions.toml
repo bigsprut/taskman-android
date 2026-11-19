@@ -25,9 +25,15 @@ retrofit = "3.0.0"
 okhttp = "5.5.1"
 kotlinxSerialization = "1.13.0"
 kotlinxCoroutines = "1.11.0"
+# Парсер Markdown (Apache-2.0): разбор GFM без Android-зависимостей; рендеринг — свой Compose M3
+markdownParser = "0.7.18"
 
 # --- Тесты ---
 junit = "4.13.2"
+androidxTestExtJunit = "1.3.0"
+androidxTestRunner = "1.7.0"
+# Espresso 3.8 нужен для API 37: 3.7 ходит в удалённый InputManager.getInstance
+androidxEspresso = "3.8.0-alpha04"
 truth = "1.4.5"
 
 [libraries]
@@ -57,8 +63,14 @@ retrofit = { module = "com.squareup.retrofit2:retrofit", version.ref = "retrofit
 okhttp = { module = "com.squareup.okhttp3:okhttp", version.ref = "okhttp" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinxSerialization" }
 kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "kotlinxCoroutines" }
+markdown-parser = { module = "org.jetbrains:markdown", version.ref = "markdownParser" }
 
 junit = { module = "junit:junit", version.ref = "junit" }
+androidx-test-ext-junit = { module = "androidx.test.ext:junit", version.ref = "androidxTestExtJunit" }
+androidx-test-runner = { module = "androidx.test:runner", version.ref = "androidxTestRunner" }
+androidx-espresso-core = { module = "androidx.test.espresso:espresso-core", version.ref = "androidxEspresso" }
+compose-ui-test-junit4 = { module = "androidx.compose.ui:ui-test-junit4" }
+compose-ui-test-manifest = { module = "androidx.compose.ui:ui-test-manifest" }
 truth = { module = "com.google.truth:truth", version.ref = "truth" }
 kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "kotlinxCoroutines" }
 

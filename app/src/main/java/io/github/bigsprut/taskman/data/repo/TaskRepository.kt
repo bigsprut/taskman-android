@@ -2,8 +2,12 @@ package io.github.bigsprut.taskman.data.repo
 
 import io.github.bigsprut.taskman.data.remote.ApiFailure
 import io.github.bigsprut.taskman.data.remote.TaskmanApi
+import io.github.bigsprut.taskman.domain.Employee
 import io.github.bigsprut.taskman.domain.StatusOrder
 import io.github.bigsprut.taskman.domain.Task
+import io.github.bigsprut.taskman.domain.TaskDraft
+import io.github.bigsprut.taskman.domain.TaskHistoryEntry
+import io.github.bigsprut.taskman.domain.TaskStatus
 import java.io.IOException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.BufferOverflow
@@ -79,6 +83,39 @@ class TaskRepository(
 
     /** Задачи для списка, уже в порядке [StatusOrder]. */
     fun observeTasks(): Flow<List<Task>> = stateStore.observeTasks().map(StatusOrder::sort)
+
+    /** Справочник сотрудников — для поля «сотрудник» в редакторе (§5.3-Ф2). */
+    fun observeEmployees(): Flow<List<Employee>> = stateStore.observeEmployees()
+
+    /** История статусов задачи — для блока «История» в редакторе. */
+    fun observeTaskHistory(taskId: String): Flow<List<TaskHistoryEntry>> =
+        stateStore.observeTaskHistory(taskId)
+
+    /**
+     * Черновик задачи для редактора из локального снапшота.
+     *
+     * Редактор не читает состояние сервера напрямую: пока лист открыт, фоновый `refresh()`
+     * может обновить базу, но черновик остаётся нетронутым (регресс из §9-Ф2).
+     */
+    suspend fun loadDraft(taskId: String): TaskDraft? {
+        val snapshot = stateStore.loadTaskDraft(taskId) ?: return null
+        val entity = snapshot.entity
+        return TaskDraft(
+            id = entity.id,
+            listId = entity.listId,
+            parentId = entity.parentId,
+            title = entity.title,
+            content = entity.content,
+            status = TaskStatus.fromWireValue(entity.status),
+            categoryId = entity.categoryId,
+            tagIds = snapshot.tagIds.toSet(),
+            source = entity.source,
+            createdAt = entity.createdAt,
+            completedAt = entity.completedAt,
+            statusDateTs = null,
+            updatedAt = entity.updatedAt,
+        )
+    }
 
     /**
      * Забирает `/api/state` и атомарно заменяет локальный снапшот.

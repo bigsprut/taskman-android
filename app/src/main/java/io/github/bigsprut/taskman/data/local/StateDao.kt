@@ -76,6 +76,14 @@ interface StateDao {
     @Query("SELECT * FROM categories ORDER BY position")
     fun observeCategoryCatalog(): Flow<List<CategoryEntity>>
 
+    /** Справочник сотрудников для редактора задачи (§5.3-Ф2). */
+    @Query("SELECT * FROM employees ORDER BY name")
+    fun observeEmployeeCatalog(): Flow<List<EmployeeEntity>>
+
+    /** История статусов задачи — блок «История» в редакторе. */
+    @Query("SELECT * FROM task_history WHERE taskId = :taskId ORDER BY ts DESC")
+    fun observeTaskHistory(taskId: String): Flow<List<TaskStatusHistoryEntity>>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertTasks(tasks: List<TaskEntity>)
 

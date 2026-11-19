@@ -8,10 +8,13 @@ import io.github.bigsprut.taskman.data.remote.TaskmanApi
 import io.github.bigsprut.taskman.data.repo.StateSnapshot
 import io.github.bigsprut.taskman.data.repo.StateStore
 import io.github.bigsprut.taskman.data.repo.SyncOutcome
+import io.github.bigsprut.taskman.data.repo.TaskDraftSnapshot
 import io.github.bigsprut.taskman.data.repo.TaskRepository
 import io.github.bigsprut.taskman.domain.Category
+import io.github.bigsprut.taskman.domain.Employee
 import io.github.bigsprut.taskman.domain.Tag
 import io.github.bigsprut.taskman.domain.Task
+import io.github.bigsprut.taskman.domain.TaskHistoryEntry
 import java.io.File
 import java.nio.file.Files
 import kotlinx.coroutines.flow.Flow
@@ -229,6 +232,14 @@ private class FakeStateStore : StateStore {
     override fun observeTags(): Flow<List<Tag>> = emptyFlow()
 
     override fun observeCategories(): Flow<List<Category>> = emptyFlow()
+
+    // Справочник сотрудников и история задачи нужны только редактору (Ф2), сеть их не читает.
+    override fun observeEmployees(): Flow<List<Employee>> = emptyFlow()
+
+    override fun observeTaskHistory(taskId: String): Flow<List<TaskHistoryEntry>> = emptyFlow()
+
+    // Черновик редактора собирается репозиторием из этой же записи; сетевым тестам не нужен.
+    override suspend fun loadTaskDraft(taskId: String): TaskDraftSnapshot? = null
 
     override suspend fun clear() {
         snapshot = null

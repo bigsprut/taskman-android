@@ -9,6 +9,7 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.bigsprut.taskman.ui.common.LoadingState
 import io.github.bigsprut.taskman.ui.device.DeviceApprovalScreen
+import io.github.bigsprut.taskman.ui.editor.TaskEditorViewModel
 import io.github.bigsprut.taskman.ui.list.TaskListViewModel
 import io.github.bigsprut.taskman.ui.login.LoginScreen
 import io.github.bigsprut.taskman.ui.session.SessionUiState
@@ -28,6 +29,7 @@ import io.github.bigsprut.taskman.ui.session.SessionViewModel
 fun AppRoot(
     sessionViewModel: SessionViewModel,
     taskListViewModel: TaskListViewModel,
+    editorViewModel: TaskEditorViewModel,
     modifier: Modifier = Modifier,
 ) {
     val sessionState by sessionViewModel.state.collectAsStateWithLifecycle()
@@ -64,6 +66,7 @@ fun AppRoot(
         SessionUiState.Ready -> MainScreen(
             sessionViewModel = sessionViewModel,
             taskListViewModel = taskListViewModel,
+            editorViewModel = editorViewModel,
             modifier = modifier,
         )
     }

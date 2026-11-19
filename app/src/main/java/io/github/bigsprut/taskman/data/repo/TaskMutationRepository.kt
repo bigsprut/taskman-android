@@ -2,6 +2,7 @@ package io.github.bigsprut.taskman.data.repo
 
 import io.github.bigsprut.taskman.data.remote.ApiFailure
 import io.github.bigsprut.taskman.data.remote.TaskmanApi
+import io.github.bigsprut.taskman.domain.TaskDraft
 import io.github.bigsprut.taskman.domain.TaskStatus
 import java.io.IOException
 import kotlinx.coroutines.CancellationException
@@ -52,6 +53,41 @@ class TaskMutationRepository(
 
     /** Смахивание-удаление: сервер удаляет задачу вместе с подзадачами (§4). */
     suspend fun delete(taskId: String): MutationOutcome = execute { api.deleteTask(taskId) }
+
+    /**
+     * Сохранение черновика редактора (Ф2): UPSERT полного объекта с CAS.
+     *
+     * Вызывается при закрытии листа **любым** путём (§5.3-Ф2), поэтому метод не зависит от
+     * того, чем закрыли: бэкенд/жест/кнопка — все приходят сюда.
+     */
+    suspend fun saveDraft(draft: TaskDraft): MutationOutcome =
+        execute { api.upsertTasks(listOf(TaskPayload.fromDraft(draft))) }
+
+    /**
+     * Новая подзадача: `list_id` и `parent_id` берутся из локальной записи родителя,
+     * `id = null` — сервер выдаст свой.
+     */
+    suspend fun addSubtask(parentId: String, title: String): MutationOutcome {
+        val parent = reader.taskEntity(parentId)
+            ?: return MutationOutcome.Failed(
+                ApiFailure.Internal(IllegalStateException("parent $parentId is absent in local snapshot")),
+            )
+        return execute {
+            api.upsertTasks(listOf(TaskPayload.newSubtask(parent.listId, parentId, title)))
+        }
+    }
+
+    /** Переименование подзадачи (инлайн в редакторе): полный payload с новым названием. */
+    suspend fun renameSubtask(taskId: String, title: String): MutationOutcome {
+        val entity = reader.taskEntity(taskId)
+            ?: return MutationOutcome.Failed(
+                ApiFailure.Internal(IllegalStateException("task $taskId is absent in local snapshot")),
+            )
+        val tagIds = reader.tagIds(taskId)
+        return execute {
+            api.upsertTasks(listOf(TaskPayload.fromEntity(entity, tagIds, title = title)))
+        }
+    }
 
     private suspend fun execute(mutation: suspend () -> Response<*>): MutationOutcome = try {
         val response = mutation()

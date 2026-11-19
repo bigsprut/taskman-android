@@ -1,11 +1,14 @@
 package io.github.bigsprut.taskman.domain
 
+import kotlinx.serialization.Serializable
+
 /**
  * Статус задачи по контракту API (ТЗ §4, §6).
  *
  * Порядок объявления задаёт `STATUS_ORDER` вывода в списке: активные задачи идут первыми,
  * закрытые — в конце (§5.3, Ф0).
  */
+@Serializable
 enum class TaskStatus(val wireValue: String, val sortIndex: Int) {
     IN_PROGRESS("inprogress", 0),
     CREATED("created", 1),

@@ -4,6 +4,7 @@ import androidx.lifecycle.createSavedStateHandle
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import io.github.bigsprut.taskman.di.AppContainer
+import io.github.bigsprut.taskman.ui.editor.TaskEditorViewModel
 import io.github.bigsprut.taskman.ui.list.TaskListViewModel
 import io.github.bigsprut.taskman.ui.session.SessionViewModel
 
@@ -11,8 +12,8 @@ import io.github.bigsprut.taskman.ui.session.SessionViewModel
  * Фабрики ViewModel для ручного DI.
  *
  * `ViewModelProvider.Factory` вместо Hilt: граф зависимостей маленький и явный, а
- * ViewModel-и получают только то, что им нужно. Списку нужен `SavedStateHandle` —
- * в нём переживает фильтр.
+ * ViewModel-и получают только то, что им нужно. Списку и редактору нужен `SavedStateHandle` —
+ * в нём переживают фильтр и черновик задачи.
  */
 object TaskmanViewModels {
 
@@ -30,6 +31,17 @@ object TaskmanViewModels {
         initializer {
             TaskListViewModel(
                 repository = container.taskRepository,
+                mutations = container.taskMutationRepository,
+                store = container.catalogStore,
+                savedState = createSavedStateHandle(),
+            )
+        }
+    }
+
+    fun taskEditor(container: AppContainer) = viewModelFactory {
+        initializer {
+            TaskEditorViewModel(
+                tasks = container.taskRepository,
                 mutations = container.taskMutationRepository,
                 store = container.catalogStore,
                 savedState = createSavedStateHandle(),

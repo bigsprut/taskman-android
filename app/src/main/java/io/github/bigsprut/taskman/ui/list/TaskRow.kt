@@ -1,6 +1,7 @@
 package io.github.bigsprut.taskman.ui.list
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -67,6 +68,7 @@ fun TaskRow(
     onToggleCompleted: (Task, Boolean) -> Unit,
     onToggleExpanded: (Task) -> Unit,
     onDeleteRequest: (Task) -> Unit,
+    onOpen: (Task) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val task = item.task
@@ -93,7 +95,9 @@ fun TaskRow(
         backgroundContent = { DeleteSwipeBackground() },
     ) {
         ListItem(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { onOpen(task) },
             colors = ListItemDefaults.colors(
                 containerColor = MaterialTheme.colorScheme.surface,
             ),

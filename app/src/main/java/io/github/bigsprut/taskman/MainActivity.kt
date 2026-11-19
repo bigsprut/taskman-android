@@ -9,6 +9,7 @@ import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.bigsprut.taskman.ui.AppRoot
 import io.github.bigsprut.taskman.ui.TaskmanViewModels
+import io.github.bigsprut.taskman.ui.editor.TaskEditorViewModel
 import io.github.bigsprut.taskman.ui.list.TaskListViewModel
 import io.github.bigsprut.taskman.ui.session.SessionViewModel
 import io.github.bigsprut.taskman.ui.theme.TaskmanTheme
@@ -53,9 +54,13 @@ private fun TaskmanAppContent(
     val taskListViewModel: TaskListViewModel = viewModel(
         factory = TaskmanViewModels.taskList(container),
     )
+    val editorViewModel: TaskEditorViewModel = viewModel(
+        factory = TaskmanViewModels.taskEditor(container),
+    )
 
     AppRoot(
         sessionViewModel = sessionViewModel,
         taskListViewModel = taskListViewModel,
+        editorViewModel = editorViewModel,
     )
 }

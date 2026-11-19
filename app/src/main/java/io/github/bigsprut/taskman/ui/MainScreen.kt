@@ -34,6 +34,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.bigsprut.taskman.R
 import io.github.bigsprut.taskman.ui.common.rememberFailureTexts
+import io.github.bigsprut.taskman.ui.editor.EditorMessage
+import io.github.bigsprut.taskman.ui.editor.TaskEditorSheet
+import io.github.bigsprut.taskman.ui.editor.TaskEditorViewModel
 import io.github.bigsprut.taskman.ui.common.userMessage
 import io.github.bigsprut.taskman.ui.list.ListMessage
 import io.github.bigsprut.taskman.ui.list.TaskListContent
@@ -57,6 +60,7 @@ private const val TAB_SETTINGS = 1
 fun MainScreen(
     sessionViewModel: SessionViewModel,
     taskListViewModel: TaskListViewModel,
+    editorViewModel: TaskEditorViewModel,
     modifier: Modifier = Modifier,
 ) {
     var selectedTab by rememberSaveable { mutableIntStateOf(TAB_TASKS) }
@@ -83,6 +87,9 @@ fun MainScreen(
     val conflictDeleteText = stringResource(R.string.conflict_delete)
     val toggleFailedText = stringResource(R.string.toggle_failed)
     val deleteFailedText = stringResource(R.string.delete_failed)
+    val editorConflictText = stringResource(R.string.editor_save_conflict)
+    val editorSaveFailedText = stringResource(R.string.editor_save_failed)
+    val editorSubtaskFailedText = stringResource(R.string.editor_subtask_failed)
 
     // Если данные есть (из Room), ошибку синхронизации показываем снекбаром и не стираем
     // список с экрана: «нет сети» не означает «нет данных».
@@ -102,6 +109,20 @@ fun MainScreen(
                     "$toggleFailedText: ${failureTexts.describe(message.failure)}"
                 is ListMessage.DeleteFailed ->
                     "$deleteFailedText: ${failureTexts.describe(message.failure)}"
+            }
+            snackbarHostState.showSnackbar(text)
+        }
+    }
+
+    // Сообщения редактора: конфликт версий и отказы сервера — в тот же снекбар-хост.
+    LaunchedEffect(editorViewModel) {
+        editorViewModel.messages.collect { message ->
+            val text = when (message) {
+                EditorMessage.SaveConflict -> editorConflictText
+                is EditorMessage.SaveFailed ->
+                    "$editorSaveFailedText: ${failureTexts.describe(message.failure)}"
+                is EditorMessage.SubtaskFailed ->
+                    "$editorSubtaskFailedText: ${failureTexts.describe(message.failure)}"
             }
             snackbarHostState.showSnackbar(text)
         }
@@ -175,6 +196,7 @@ fun MainScreen(
                     onToggleCompleted = taskListViewModel::setCompleted,
                     onToggleExpanded = taskListViewModel::toggleExpanded,
                     onDeleteConfirmed = taskListViewModel::delete,
+                    onOpenTask = { task -> editorViewModel.open(task.id) },
                     onRefresh = taskListViewModel::refresh,
                 )
 
@@ -188,4 +210,6 @@ fun MainScreen(
             }
         }
     }
+
+    TaskEditorSheet(viewModel = editorViewModel)
 }

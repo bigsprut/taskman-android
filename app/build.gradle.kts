@@ -125,7 +125,20 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.android)
 
+    // Markdown: разбор — библиотека (Apache-2.0), отрисовка — Compose M3 (см. PHASE-REPORT §5)
+    implementation(libs.markdown.parser)
+
     testImplementation(libs.junit)
     testImplementation(libs.truth)
     testImplementation(libs.kotlinx.coroutines.test)
+
+    // UI-тесты (регресс из §9-Ф2): запуск на устройстве/эмуляторе.
+    androidTestImplementation(platform(libs.compose.bom))
+    androidTestImplementation(libs.compose.ui.test.junit4)
+    androidTestImplementation(libs.androidx.test.ext.junit)
+    androidTestImplementation(libs.androidx.test.runner)
+    // Espresso 3.7 ходит в удалённый в Android 17 InputManager.getInstance → NoSuchMethodException;
+    // для API 37 нужна ветка 3.8 (см. PHASE-REPORT, «известные мелочи»).
+    androidTestImplementation(libs.androidx.espresso.core)
+    debugImplementation(libs.compose.ui.test.manifest)
 }

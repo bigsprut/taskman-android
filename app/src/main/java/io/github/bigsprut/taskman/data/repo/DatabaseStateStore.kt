@@ -3,13 +3,16 @@ package io.github.bigsprut.taskman.data.repo
 import androidx.room.withTransaction
 import io.github.bigsprut.taskman.data.local.TaskmanDatabase
 import io.github.bigsprut.taskman.data.local.entity.CategoryEntity
+import io.github.bigsprut.taskman.data.local.entity.EmployeeEntity
 import io.github.bigsprut.taskman.data.local.entity.ServerSettingsEntity
 import io.github.bigsprut.taskman.data.local.entity.TagEntity
 import io.github.bigsprut.taskman.data.local.entity.TaskEntity
 import io.github.bigsprut.taskman.data.local.entity.TaskWithCategory
 import io.github.bigsprut.taskman.domain.Category
+import io.github.bigsprut.taskman.domain.Employee
 import io.github.bigsprut.taskman.domain.Tag
 import io.github.bigsprut.taskman.domain.Task
+import io.github.bigsprut.taskman.domain.TaskHistoryEntry
 import io.github.bigsprut.taskman.domain.TaskStatus
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
@@ -70,6 +73,23 @@ class DatabaseStateStore(
             categories.map(CategoryEntity::toDomain)
         }
 
+    override fun observeEmployees(): Flow<List<Employee>> =
+        database.stateDao().observeEmployeeCatalog().map { employees ->
+            employees.map(EmployeeEntity::toDomain)
+        }
+
+    override fun observeTaskHistory(taskId: String): Flow<List<TaskHistoryEntry>> =
+        database.stateDao().observeTaskHistory(taskId).map { entries ->
+            entries.map { entry ->
+                TaskHistoryEntry(status = TaskStatus.fromWireValue(entry.status), ts = entry.ts)
+            }
+        }
+
+    override suspend fun loadTaskDraft(taskId: String): TaskDraftSnapshot? {
+        val entity = database.stateDao().findTask(taskId) ?: return null
+        return TaskDraftSnapshot(entity = entity, tagIds = database.stateDao().tagsOf(taskId))
+    }
+
     override suspend fun clear() {
         database.withTransaction {
             val dao = database.stateDao()
@@ -108,3 +128,5 @@ internal fun TaskWithCategory.toDomain(tagIds: List<String>): Task = Task(
 internal fun TagEntity.toDomain(): Tag = Tag(id = id, title = title, color = color)
 
 internal fun CategoryEntity.toDomain(): Category = Category(id = id, title = title, color = color)
+
+internal fun EmployeeEntity.toDomain(): Employee = Employee(id = id, name = name)

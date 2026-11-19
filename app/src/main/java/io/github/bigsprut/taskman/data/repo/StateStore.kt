@@ -9,8 +9,10 @@ import io.github.bigsprut.taskman.data.local.entity.TaskListEntity
 import io.github.bigsprut.taskman.data.local.entity.TaskStatusHistoryEntity
 import io.github.bigsprut.taskman.data.local.entity.TaskTagEntity
 import io.github.bigsprut.taskman.domain.Category
+import io.github.bigsprut.taskman.domain.Employee
 import io.github.bigsprut.taskman.domain.Tag
 import io.github.bigsprut.taskman.domain.Task
+import io.github.bigsprut.taskman.domain.TaskHistoryEntry
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -31,6 +33,12 @@ data class StateSnapshot(
     val defaultCategoryId: String? = null,
 )
 
+/** Полная запись задачи для редактора: сущность + её теги (payload собирается из них, §4). */
+data class TaskDraftSnapshot(
+    val entity: TaskEntity,
+    val tagIds: List<String>,
+)
+
 /**
  * Хранилище снапшота. Интерфейс, чтобы репозиторий не зависел от Room и тестировался
  * на подставном хранилище (в Ф4 та же роль понадобится офлайн-очереди).
@@ -46,8 +54,17 @@ interface StateStore {
     /** Каталог тегов для чипов фильтра и бейджей. */
     fun observeTags(): Flow<List<Tag>>
 
-    /** Каталог категорий для чипов фильтра. */
+    /** Каталог категорий для чипов фильтра и редактора. */
     fun observeCategories(): Flow<List<Category>>
+
+    /** Справочник сотрудников — поле «сотрудник» в редакторе (§5.3-Ф2). */
+    fun observeEmployees(): Flow<List<Employee>>
+
+    /** История статусов задачи для блока «История» в редакторе. */
+    fun observeTaskHistory(taskId: String): Flow<List<TaskHistoryEntry>>
+
+    /** Полная запись задачи для открытия редактора. */
+    suspend fun loadTaskDraft(taskId: String): TaskDraftSnapshot?
 
     /** Локальный кэш задач при выходе/смене сервера. */
     suspend fun clear()

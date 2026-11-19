@@ -13,10 +13,13 @@ import io.github.bigsprut.taskman.data.remote.dto.TaskInDto
 import io.github.bigsprut.taskman.data.remote.dto.UpsertTasksResponse
 import io.github.bigsprut.taskman.data.repo.StateSnapshot
 import io.github.bigsprut.taskman.data.repo.StateStore
+import io.github.bigsprut.taskman.data.repo.TaskDraftSnapshot
 import io.github.bigsprut.taskman.data.repo.TaskSnapshotReader
 import io.github.bigsprut.taskman.domain.Category
+import io.github.bigsprut.taskman.domain.Employee
 import io.github.bigsprut.taskman.domain.Tag
 import io.github.bigsprut.taskman.domain.Task
+import io.github.bigsprut.taskman.domain.TaskHistoryEntry
 import io.github.bigsprut.taskman.domain.TaskStatus
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -96,6 +99,9 @@ class FakeTaskmanApi : TaskmanApi {
  * репозитория. Локальные сущности для мутаций ([entities], [tagsByTask]) заполняются явно
  * через [putTask], а не из [replaceSnapshot]: так тест видит ровно тот снапшот, который сам
  * подготовил (маппинг ответа сервера покрыт `StateMapperTest`).
+ *
+ * Редактору (Ф2) нужны ещё справочник сотрудников ([employeesFlow]) и история статусов
+ * задачи ([historyByTask]): оба отдаются потоками, как и в Room-реализации.
  */
 class FakeStateStore(initialTasks: List<Task> = emptyList()) : StateStore, TaskSnapshotReader {
 
@@ -105,6 +111,16 @@ class FakeStateStore(initialTasks: List<Task> = emptyList()) : StateStore, TaskS
     val tasksFlow = MutableStateFlow(initialTasks)
     val tagsFlow = MutableStateFlow<List<Tag>>(emptyList())
     val categoriesFlow = MutableStateFlow<List<Category>>(emptyList())
+
+    /** Справочник сотрудников для поля «сотрудник» в редакторе (§5.3-Ф2). */
+    val employeesFlow = MutableStateFlow<List<Employee>>(emptyList())
+
+    /**
+     * История статусов по задачам. Поток создаётся лениво: подписка на историю неизвестной
+     * задачи (редактор подписывается сразу при открытии) должна дать пустой список, а не
+     * упасть, — как и `observeTaskHistory` у Room.
+     */
+    val historyByTask = mutableMapOf<String, MutableStateFlow<List<TaskHistoryEntry>>>()
 
     /** Локальный снапшот для мутаций: полные сущности задач по id. */
     val entities = mutableMapOf<String, TaskEntity>()
@@ -127,14 +143,32 @@ class FakeStateStore(initialTasks: List<Task> = emptyList()) : StateStore, TaskS
 
     override fun observeCategories(): Flow<List<Category>> = categoriesFlow
 
+    override fun observeEmployees(): Flow<List<Employee>> = employeesFlow
+
+    override fun observeTaskHistory(taskId: String): Flow<List<TaskHistoryEntry>> =
+        historyByTask.getOrPut(taskId) { MutableStateFlow(emptyList()) }
+
+    /**
+     * Полная запись задачи для редактора: сущность из [entities] и её теги.
+     *
+     * Источник тот же, что у мутаций ([putTask]), поэтому «что видит редактор» и «из чего
+     * собирается payload» в тесте не могут разойтись.
+     */
+    override suspend fun loadTaskDraft(taskId: String): TaskDraftSnapshot? =
+        entities[taskId]?.let { entity ->
+            TaskDraftSnapshot(entity = entity, tagIds = tagsByTask[taskId].orEmpty())
+        }
+
     override suspend fun clear() {
         clearCalls += 1
         stored = null
         tasksFlow.value = emptyList()
         tagsFlow.value = emptyList()
         categoriesFlow.value = emptyList()
+        employeesFlow.value = emptyList()
         entities.clear()
         tagsByTask.clear()
+        historyByTask.clear()
     }
 
     override suspend fun taskEntity(id: String): TaskEntity? = entities[id]
@@ -145,6 +179,11 @@ class FakeStateStore(initialTasks: List<Task> = emptyList()) : StateStore, TaskS
     fun putTask(entity: TaskEntity, tagIds: List<String> = emptyList()) {
         entities[entity.id] = entity
         tagsByTask[entity.id] = tagIds
+    }
+
+    /** Кладёт историю статусов задачи — источник для блока «История» в редакторе. */
+    fun putHistory(taskId: String, entries: List<TaskHistoryEntry>) {
+        historyByTask.getOrPut(taskId) { MutableStateFlow(emptyList()) }.value = entries
     }
 }
 

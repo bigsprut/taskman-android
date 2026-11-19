@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Правила резервного копирования для API 26–30 (на 31+ действует dataExtractionRules).
+  Копирование выключено целиком: allowBackup=false, а здесь то же самое задекларировано
+  явно — ни настройки подключения, ни кэш задач не должны покидать устройство.
+-->
+<full-backup-content>
+    <exclude domain="root" path="." />
+</full-backup-content>

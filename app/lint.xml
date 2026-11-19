@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<lint>
+    <!--
+      Версии зависимостей зафиксированы осознанно (ТЗ §5.1, «версии зафиксировать в Ф0»):
+      Gradle 9.6.0 — требование AGP 9.5.1, а Compose BOM 2026.09.00 — последний набор,
+      собирающийся с compileSdk 37 (Compose 1.13 требует компиляционный SDK 37.1).
+      Подсказки «доступна версия новее» не являются дефектом и не должны шуметь в отчёте.
+    -->
+    <issue id="AndroidGradlePluginVersion" severity="ignore" />
+    <issue id="GradleDependency" severity="ignore" />
+    <issue id="NewerVersionAvailable" severity="ignore" />
+
+    <!--
+      Адаптивная иконка обязана лежать в mipmap-anydpi-v26: AAPT2 собирает <adaptive-icon>
+      только в каталоге с квалификатором v26. Совет «слить в mipmap-anydpi» неприменим —
+      проверено: без -v26 ресурс mipmap/ic_launcher не создаётся вовсе.
+    -->
+    <issue id="ObsoleteSdkInt" severity="ignore" />
+</lint>

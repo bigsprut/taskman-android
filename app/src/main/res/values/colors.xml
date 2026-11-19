@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Фон окна до первой отрисовки Compose: светлая тема. В тёмной — values-night. -->
+    <color name="window_background">#FFFBFE</color>
+    <color name="splash_background">#6750A4</color>
+    <color name="ic_launcher_background">#6750A4</color>
+</resources>

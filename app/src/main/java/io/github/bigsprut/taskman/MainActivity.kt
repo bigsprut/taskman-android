@@ -51,6 +51,12 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        // Ф4: вернулись в приложение — сразу пытаемся отправить очередь, не дожидаясь backoff.
+        (application as TaskmanApp).container.syncScheduler.requestFlush()
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)

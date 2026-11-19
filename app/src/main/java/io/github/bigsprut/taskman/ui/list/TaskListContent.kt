@@ -4,10 +4,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Surface
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -54,6 +57,7 @@ fun TaskListContent(
     syncStatus: SyncStatus,
     expandedParents: Set<String>,
     pendingTaskIds: Set<String>,
+    pendingMutationCount: Int,
     onStatusFilterChange: (StatusFilter) -> Unit,
     onCategoryToggle: (String) -> Unit,
     onTagToggle: (String) -> Unit,
@@ -75,6 +79,21 @@ fun TaskListContent(
     val tagsById = remember(tags) { tags.associateBy(Tag::id) }
 
     Column(modifier = modifier.fillMaxSize()) {
+        if (pendingMutationCount > 0) {
+            // Ф4: видно, что изменения сохранены локально и ждут сети.
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                color = MaterialTheme.colorScheme.secondaryContainer,
+            ) {
+                Text(
+                    text = stringResource(R.string.list_pending_banner, pendingMutationCount),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                )
+            }
+        }
+
         TaskFilterHeader(
             filter = filter,
             counts = counts,

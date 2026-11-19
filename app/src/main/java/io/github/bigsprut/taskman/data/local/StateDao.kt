@@ -94,6 +94,14 @@ interface StateDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertTasks(tasks: List<TaskEntity>)
 
+    /** Оптимистичная локальная правка одной задачи (Ф4): применяется до ответа сервера. */
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertTask(task: TaskEntity)
+
+    /** Локальное soft-delete задачи вместе с подзадачами (Ф4): как это сделает сервер. */
+    @Query("UPDATE tasks SET deleted = 1 WHERE id = :taskId OR parentId = :taskId")
+    suspend fun markDeletedSubtree(taskId: String)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertLists(lists: List<TaskListEntity>)
 

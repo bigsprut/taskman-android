@@ -93,6 +93,7 @@ fun MainScreen(
     val categories by taskListViewModel.categories.collectAsStateWithLifecycle()
     val expandedParents by taskListViewModel.expandedParents.collectAsStateWithLifecycle()
     val pendingTaskIds by taskListViewModel.pendingTaskIds.collectAsStateWithLifecycle()
+    val pendingMutationCount by taskListViewModel.pendingMutationCount.collectAsStateWithLifecycle()
 
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -115,6 +116,7 @@ fun MainScreen(
     val attachmentOpenFailedText = stringResource(R.string.attachment_open_failed)
     val shareFailedText = stringResource(R.string.share_attach_failed)
     val shareAttachedText = stringResource(R.string.share_attached)
+    val savedLocallyText = stringResource(R.string.saved_locally)
 
     // Если данные есть (из Room), ошибку синхронизации показываем снекбаром и не стираем
     // список с экрана: «нет сети» не означает «нет данных».
@@ -137,6 +139,7 @@ fun MainScreen(
                 is ListMessage.ShareAttachFailed ->
                     "$shareFailedText: ${failureTexts.describe(message.failure)}"
                 ListMessage.SharedFilesAttached -> shareAttachedText
+                ListMessage.SavedLocally -> savedLocallyText
             }
             snackbarHostState.showSnackbar(text)
         }
@@ -154,6 +157,7 @@ fun MainScreen(
                 is EditorMessage.AttachmentFailed ->
                     "$editorAttachmentFailedText: ${failureTexts.describe(message.failure)}"
                 EditorMessage.AttachmentOpenFailed -> attachmentOpenFailedText
+                EditorMessage.SavedLocally -> savedLocallyText
                 is EditorMessage.AttachmentReady -> {
                     // Открытие и шаринг требуют Context: сначала показать, потом (если не вышло)
                     // сообщить. Ошибка запуска UI показывает через reportAttachmentOpenFailed.
@@ -247,6 +251,7 @@ fun MainScreen(
                     syncStatus = syncStatus,
                     expandedParents = expandedParents,
                     pendingTaskIds = pendingTaskIds,
+                    pendingMutationCount = pendingMutationCount,
                     onStatusFilterChange = taskListViewModel::setStatusFilter,
                     onCategoryToggle = taskListViewModel::toggleCategory,
                     onTagToggle = taskListViewModel::toggleTag,

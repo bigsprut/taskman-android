@@ -20,6 +20,13 @@ class TaskmanApp : Application(), SingletonImageLoader.Factory {
 
     val container: AppContainer by lazy { AppContainer(this) }
 
+    override fun onCreate() {
+        super.onCreate()
+        // Ф4: периодическое обновление раз в 15 минут и отправка очереди по возвращению сети.
+        container.syncScheduler.schedulePeriodicSync()
+        container.syncScheduler.observeNetworkAndFlush()
+    }
+
     override fun newImageLoader(context: PlatformContext): ImageLoader =
         ImageLoader.Builder(context)
             .components {

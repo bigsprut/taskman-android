@@ -10,6 +10,7 @@ import io.github.bigsprut.taskman.data.local.entity.TaskEntity
 import io.github.bigsprut.taskman.data.attachments.AttachmentDownloader
 import io.github.bigsprut.taskman.data.attachments.AttachmentRepository
 import io.github.bigsprut.taskman.data.remote.ConnectionHolder
+import io.github.bigsprut.taskman.data.repo.OfflineMutationQueue
 import io.github.bigsprut.taskman.data.repo.TaskMutationRepository
 import io.github.bigsprut.taskman.data.repo.TaskRepository
 import io.github.bigsprut.taskman.ui.editor.EditorTestTags
@@ -63,7 +64,13 @@ class EditorDraftRegressionTest {
         val tasks = TaskRepository(api = api, stateStore = store)
         val viewModel = TaskEditorViewModel(
             tasks = tasks,
-            mutations = TaskMutationRepository(api = api, reader = store, tasks = tasks),
+            mutations = TaskMutationRepository(
+                api = api,
+                reader = store,
+                tasks = tasks,
+                queue = OfflineMutationQueue(FakePendingMutationDao()),
+                writer = FakeLocalTaskWriter(),
+            ),
             attachmentsRepo = AttachmentRepository(
                 api = api,
                 store = store,

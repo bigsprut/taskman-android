@@ -2,6 +2,8 @@ package io.github.bigsprut.taskman.data.repo
 
 import com.google.common.truth.Truth.assertThat
 import io.github.bigsprut.taskman.data.remote.ApiFailure
+import io.github.bigsprut.taskman.testutil.FakeLocalTaskWriter
+import io.github.bigsprut.taskman.testutil.FakePendingMutationDao
 import io.github.bigsprut.taskman.testutil.FakeStateStore
 import io.github.bigsprut.taskman.testutil.FakeTaskmanApi
 import io.github.bigsprut.taskman.testutil.errorResponseOf
@@ -20,13 +22,26 @@ import org.junit.Test
  * локальной сущности, `updated_at` — из снапшота (CAS), а после успеха/конфликта состояние
  * перечитывается `/api/state`. Отказы авторизации уходят в поток `authFailures`, чтобы
  * приложение увело пользователя на вход, а не показывало «не удалось».
+ *
+ * С Ф4 сюда добавилось офлайн-правило: сетевой сбой (`IOException`) не ошибка, а `Queued` —
+ * правка применена локально и ждёт отправки; подробно очередь разобрана в
+ * [TaskMutationQueueTest] и [TaskMutationFlushTest].
  */
 class TaskMutationRepositoryTest {
 
     private val api = FakeTaskmanApi()
     private val store = FakeStateStore()
     private val repository = TaskRepository(api = api, stateStore = store, now = { NOW_MILLIS })
-    private val mutations = TaskMutationRepository(api = api, reader = store, tasks = repository)
+    private val dao = FakePendingMutationDao()
+    private val queue = OfflineMutationQueue(dao)
+    private val writer = FakeLocalTaskWriter()
+    private val mutations = TaskMutationRepository(
+        api = api,
+        reader = store,
+        tasks = repository,
+        queue = queue,
+        writer = writer,
+    )
 
     /** Версия задачи на момент последнего `/api/state` — её и должен унести payload. */
     private val serverVersion = 1_765_843_200.0
@@ -134,17 +149,19 @@ class TaskMutationRepositoryTest {
     }
 
     @Test
-    fun `IOException даёт Failed Network`() = runTest {
+    fun `IOException копится в очередь и даёт Queued`() = runTest {
         store.putTask(entity)
         val boom = IOException("сеть недоступна")
         api.upsertOutcome = { throw boom }
 
         val outcome = mutations.setCompleted(TASK_ID, completed = true)
 
-        assertThat(outcome).isInstanceOf(MutationOutcome.Failed::class.java)
-        val failure = (outcome as MutationOutcome.Failed).failure
-        assertThat(failure).isInstanceOf(ApiFailure.Network::class.java)
-        assertThat((failure as ApiFailure.Network).cause).isSameInstanceAs(boom)
+        // С Ф4 сетевой сбой — не ошибка для пользователя: правка применена локально и уйдёт
+        // из очереди, когда появится сеть (§5.3-Ф4). Сервер-отказы так не копятся.
+        assertThat(outcome).isEqualTo(MutationOutcome.Queued)
+        assertThat(writer.upsertCalls).isEqualTo(1)
+        assertThat(writer.lastUpsert!!.status).isEqualTo("completed")
+        assertThat(queue.pending().single().baseUpdatedAt).isEqualTo(serverVersion)
     }
 
     @Test

@@ -19,6 +19,7 @@ fun ApiFailure.userMessage(): String = when (this) {
     is ApiFailure.Http -> stringResource(R.string.error_http, code)
     is ApiFailure.Malformed -> stringResource(R.string.error_data)
     ApiFailure.InvalidInput -> stringResource(R.string.error_invalid_input)
+    ApiFailure.FileAccess -> stringResource(R.string.error_file_access)
     is ApiFailure.Internal -> stringResource(R.string.error_internal)
 }
 

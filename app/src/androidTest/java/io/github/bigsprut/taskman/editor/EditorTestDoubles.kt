@@ -2,6 +2,10 @@ package io.github.bigsprut.taskman.editor
 
 import io.github.bigsprut.taskman.data.local.entity.TaskEntity
 import io.github.bigsprut.taskman.data.attachments.AttachmentStore
+import io.github.bigsprut.taskman.data.local.PendingMutationDao
+import io.github.bigsprut.taskman.data.local.entity.PendingMutationEntity
+import io.github.bigsprut.taskman.data.repo.LocalTaskWriter
+import io.github.bigsprut.taskman.data.repo.OfflineMutationQueue
 import io.github.bigsprut.taskman.data.attachments.LocalFile
 import io.github.bigsprut.taskman.data.attachments.LocalFileSource
 import io.github.bigsprut.taskman.data.remote.TaskmanApi
@@ -139,4 +143,47 @@ internal class FakeStore : StateStore, TaskSnapshotReader, AttachmentStore {
 /** Пустой источник файлов: в UI-тесте вложения не читаются. */
 internal class FakeLocalFileSource : LocalFileSource {
     override suspend fun read(uri: String): LocalFile? = null
+}
+/** Очередь мутаций в памяти для UI-теста (Ф4). */
+internal class FakePendingMutationDao : PendingMutationDao {
+
+    private val records = linkedMapOf<String, PendingMutationEntity>()
+    private val count = MutableStateFlow(0)
+
+    override suspend fun upsert(record: PendingMutationEntity) {
+        records[record.taskId] = record
+        count.value = records.size
+    }
+
+    override suspend fun pending(): List<PendingMutationEntity> =
+        records.values.sortedBy { it.createdAt }
+
+    override suspend fun find(taskId: String): PendingMutationEntity? = records[taskId]
+
+    override fun observeCount(): Flow<Int> = count
+
+    override suspend fun remove(taskId: String) {
+        records.remove(taskId)
+        count.value = records.size
+    }
+
+    override suspend fun clear() {
+        records.clear()
+        count.value = 0
+    }
+}
+
+/** Локальный писатель для UI-теста: запоминает применения, ничего не пишет в Room. */
+internal class FakeLocalTaskWriter : LocalTaskWriter {
+
+    var upserts: Int = 0
+    var deletes: Int = 0
+
+    override suspend fun applyUpsert(entity: TaskEntity) {
+        upserts += 1
+    }
+
+    override suspend fun applyDelete(taskId: String) {
+        deletes += 1
+    }
 }

@@ -46,6 +46,9 @@ sealed interface ListMessage {
 
     /** Файлы «Поделиться» успешно приложены к задаче (для снекбара). */
     data object SharedFilesAttached : ListMessage
+
+    /** Сети нет: изменение сохранено локально и уйдёт из очереди (Ф4). */
+    data object SavedLocally : ListMessage
 }
 
 /**
@@ -69,6 +72,10 @@ class TaskListViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS), emptyList())
 
     val syncStatus: StateFlow<SyncStatus> = repository.syncStatus
+
+    /** Сколько мутаций ждёт отправки — баннер «есть неотправленные изменения» (Ф4). */
+    val pendingMutationCount: StateFlow<Int> = mutations.observePendingCount()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS), 0)
 
     val tags: StateFlow<List<Tag>> = store.observeTags()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS), emptyList())
@@ -139,6 +146,7 @@ class TaskListViewModel(
             try {
                 when (val outcome = mutations.setCompleted(task.id, completed)) {
                     MutationOutcome.Success -> Unit
+                    MutationOutcome.Queued -> _messages.emit(ListMessage.SavedLocally)
                     is MutationOutcome.Conflict -> _messages.emit(ListMessage.ToggleConflict)
                     is MutationOutcome.Failed -> _messages.emit(ListMessage.ToggleFailed(outcome.failure))
                 }
@@ -155,6 +163,7 @@ class TaskListViewModel(
             try {
                 when (val outcome = mutations.delete(task.id)) {
                     MutationOutcome.Success -> Unit
+                    MutationOutcome.Queued -> _messages.emit(ListMessage.SavedLocally)
                     is MutationOutcome.Conflict -> _messages.emit(ListMessage.DeleteConflict)
                     is MutationOutcome.Failed -> _messages.emit(ListMessage.DeleteFailed(outcome.failure))
                 }

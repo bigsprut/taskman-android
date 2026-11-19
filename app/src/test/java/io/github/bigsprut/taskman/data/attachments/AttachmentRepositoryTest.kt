@@ -72,7 +72,7 @@ class AttachmentRepositoryTest {
 
         assertThat(outcome).isInstanceOf(AttachmentOutcome.Failed::class.java)
         assertThat((outcome as AttachmentOutcome.Failed).failure)
-            .isInstanceOf(ApiFailure.Internal::class.java)
+            .isInstanceOf(ApiFailure.FileAccess::class.java)
         assertThat(api.uploadCalls).isEqualTo(0)
         assertThat(api.calls).isEqualTo(0)
         assertThat(store.stored).isNull()

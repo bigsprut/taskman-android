@@ -73,6 +73,7 @@
     <string name="error_data">Сервер вернул данные в неизвестном формате</string>
     <string name="error_internal">Внутренняя ошибка приложения — попробуйте ещё раз</string>
     <string name="error_invalid_input">Значение недопустимо: введите непустое имя</string>
+    <string name="error_file_access">Нет доступа к файлу — отправьте его заново</string>
 
     <!-- Фильтры (Ф1): у каждой группы чипов обязательна читаемая подпись (§5.3) -->
     <string name="filter_status_label">Статус</string>
@@ -161,4 +162,8 @@
     <string name="settings_employee_delete_text">«%1$s» будет удалён из справочника. Имена, уже указанные в задачах, не изменятся.</string>
     <string name="settings_employee_failed">Не удалось изменить справочник сотрудников</string>
     <string name="common_save">Сохранить</string>
-    <string name="common_cancel">Отмена</string></resources>
+    <string name="common_cancel">Отмена</string>
+
+    <!-- Офлайн-очередь (Ф4) -->
+    <string name="list_pending_banner">Не отправлено изменений: %1$d — отправим при появлении сети</string>
+    <string name="saved_locally">Сохранено локально — отправим при связи</string></resources>

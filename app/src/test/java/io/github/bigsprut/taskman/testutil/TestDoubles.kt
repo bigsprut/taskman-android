@@ -3,6 +3,8 @@ package io.github.bigsprut.taskman.testutil
 import io.github.bigsprut.taskman.data.attachments.AttachmentStore
 import io.github.bigsprut.taskman.data.attachments.LocalFile
 import io.github.bigsprut.taskman.data.attachments.LocalFileSource
+import io.github.bigsprut.taskman.data.local.PendingMutationDao
+import io.github.bigsprut.taskman.data.local.entity.PendingMutationEntity
 import io.github.bigsprut.taskman.data.local.entity.TaskEntity
 import io.github.bigsprut.taskman.data.remote.TaskmanApi
 import io.github.bigsprut.taskman.data.remote.dto.AttachmentDto
@@ -19,6 +21,7 @@ import io.github.bigsprut.taskman.data.remote.dto.StatusHistoryDto
 import io.github.bigsprut.taskman.data.remote.dto.TaskDto
 import io.github.bigsprut.taskman.data.remote.dto.TaskInDto
 import io.github.bigsprut.taskman.data.remote.dto.UpsertTasksResponse
+import io.github.bigsprut.taskman.data.repo.LocalTaskWriter
 import io.github.bigsprut.taskman.data.repo.StateSnapshot
 import io.github.bigsprut.taskman.data.repo.StateStore
 import io.github.bigsprut.taskman.data.repo.TaskDraftSnapshot
@@ -380,6 +383,79 @@ class FakeLocalFileSource(var file: LocalFile? = null) : LocalFileSource {
         readCalls += 1
         lastUri = uri
         return file
+    }
+}
+
+/**
+ * Подставной DAO очереди неотправленных мутаций (Ф4, §5.3).
+ *
+ * Устроен как таблица Room: `LinkedHashMap` по `taskId` (повторный `upsert` заменяет запись),
+ * `pending()` отдаёт записи по `createdAt` — тот же порядок, что `ORDER BY createdAt` в запросе.
+ * Счётчик живёт в [MutableStateFlow] и обновляется каждым изменением: тест видит 0→1→2→0
+ * без задержек, как и Flow из Room.
+ */
+class FakePendingMutationDao : PendingMutationDao {
+
+    /** Записи по `taskId`; повторный upsert заменяет значение, порядок вставки сохраняется. */
+    private val records = LinkedHashMap<String, PendingMutationEntity>()
+
+    private val count = MutableStateFlow(0)
+
+    override suspend fun upsert(record: PendingMutationEntity) {
+        records[record.taskId] = record
+        count.value = records.size
+    }
+
+    override suspend fun pending(): List<PendingMutationEntity> =
+        records.values.sortedBy { it.createdAt }
+
+    override suspend fun find(taskId: String): PendingMutationEntity? = records[taskId]
+
+    override fun observeCount(): Flow<Int> = count
+
+    override suspend fun remove(taskId: String) {
+        records.remove(taskId)
+        count.value = records.size
+    }
+
+    override suspend fun clear() {
+        records.clear()
+        count.value = records.size
+    }
+}
+
+/**
+ * Подставной локальный писатель (Ф4): запоминает, что «применилось к Room».
+ *
+ * Нужен, чтобы проверять оптимистичность без Android/Room: правка обязана попасть в локальное
+ * хранилище до попытки отправить её на сервер.
+ */
+class FakeLocalTaskWriter : LocalTaskWriter {
+
+    /** Сколько раз применяли upsert. */
+    var upsertCalls: Int = 0
+
+    /** Последняя применённая сущность — по ней проверяются поля оптимистичной правки. */
+    var lastUpsert: TaskEntity? = null
+
+    /** Все применённые upsert по порядку: видно, что и в какой последовательности записали. */
+    val upserts = mutableListOf<TaskEntity>()
+
+    /** Сколько раз применяли локальное удаление. */
+    var deleteCalls: Int = 0
+
+    /** id последнего локально удалённого поддерева. */
+    var lastDeletedId: String? = null
+
+    override suspend fun applyUpsert(entity: TaskEntity) {
+        upsertCalls += 1
+        lastUpsert = entity
+        upserts += entity
+    }
+
+    override suspend fun applyDelete(taskId: String) {
+        deleteCalls += 1
+        lastDeletedId = taskId
     }
 }
 

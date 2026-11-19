@@ -6,10 +6,13 @@ import io.github.bigsprut.taskman.data.remote.NetworkFactory
 import io.github.bigsprut.taskman.data.remote.TaskmanApi
 import io.github.bigsprut.taskman.data.remote.TaskmanJson
 import io.github.bigsprut.taskman.data.repo.MutationOutcome
+import io.github.bigsprut.taskman.data.repo.OfflineMutationQueue
 import io.github.bigsprut.taskman.data.repo.TaskMutationRepository
 import io.github.bigsprut.taskman.data.repo.TaskRepository
 import io.github.bigsprut.taskman.domain.TaskDraft
 import io.github.bigsprut.taskman.domain.TaskStatus
+import io.github.bigsprut.taskman.testutil.FakeLocalTaskWriter
+import io.github.bigsprut.taskman.testutil.FakePendingMutationDao
 import io.github.bigsprut.taskman.testutil.FakeStateStore
 import java.io.File
 import java.nio.file.Files
@@ -149,9 +152,16 @@ class DraftSaveContractTest {
         updatedAt = SERVER_VERSION,
     )
 
+    /** Репозиторий мутаций с очередью в памяти: контракт проверяется по проводу, без Room. */
     private fun mutations(api: TaskmanApi, store: FakeStateStore): TaskMutationRepository {
         val tasks = TaskRepository(api = api, stateStore = store)
-        return TaskMutationRepository(api = api, reader = store, tasks = tasks)
+        return TaskMutationRepository(
+            api = api,
+            reader = store,
+            tasks = tasks,
+            queue = OfflineMutationQueue(FakePendingMutationDao()),
+            writer = FakeLocalTaskWriter(),
+        )
     }
 
     /** Клиент с подставленным адресом сервера; кэш — свежий каталог на вызов. */

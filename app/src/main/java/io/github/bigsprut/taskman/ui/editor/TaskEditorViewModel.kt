@@ -49,6 +49,9 @@ sealed interface EditorMessage {
     /** Не удалось приложить/удалить/скачать вложение (Ф3). */
     class AttachmentFailed(val failure: ApiFailure) : EditorMessage
 
+    /** Сети нет: черновик сохранён локально и уйдёт из очереди (Ф4). */
+    data object SavedLocally : EditorMessage
+
     /** Вложение скачано, но открыть/поделиться им не удалось (нет приложения-просмотрщика). */
     data object AttachmentOpenFailed : EditorMessage
 
@@ -176,6 +179,14 @@ class TaskEditorViewModel(
                     finishClose()
                 }
 
+                MutationOutcome.Queued -> {
+                    // Локально черновик сохранён — лист можно закрывать; отправку сделает воркер.
+                    originalDraft = draft
+                    clearPersistedDraft()
+                    _messages.emit(EditorMessage.SavedLocally)
+                    finishClose()
+                }
+
                 is MutationOutcome.Conflict -> {
                     _messages.emit(EditorMessage.SaveConflict)
                     _state.update { it.copy(isSaving = false) }
@@ -297,6 +308,8 @@ class TaskEditorViewModel(
     private suspend fun reportSubtaskOutcome(outcome: MutationOutcome) {
         when (outcome) {
             MutationOutcome.Success -> Unit
+            // Переименование подзадачи — обычный upsert, поэтому оно тоже умеет копиться.
+            MutationOutcome.Queued -> _messages.emit(EditorMessage.SavedLocally)
             is MutationOutcome.Conflict -> _messages.emit(EditorMessage.SaveConflict)
             is MutationOutcome.Failed -> _messages.emit(EditorMessage.SubtaskFailed(outcome.failure))
         }

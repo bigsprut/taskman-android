@@ -59,6 +59,8 @@ class TaskRepository(
     private val api: TaskmanApi,
     private val stateStore: StateStore,
     private val now: () -> Long = System::currentTimeMillis,
+    /** Очередь неотправленных мутаций: чистится вместе с кэшем при выходе (Ф4). */
+    private val offlineQueue: OfflineMutationQueue? = null,
 ) {
 
     /**
@@ -165,6 +167,7 @@ class TaskRepository(
      * происходит после него, поэтому «догоняющий» ответ не может снова наполнить кэш.
      */
     suspend fun clearLocalData() = syncMutex.withLock {
+        offlineQueue?.clear()
         stateStore.clear()
         _syncStatus.value = SyncStatus()
     }

@@ -2,11 +2,17 @@ package io.github.bigsprut.taskman.data.repo
 
 import androidx.room.withTransaction
 import io.github.bigsprut.taskman.data.local.TaskmanDatabase
+import io.github.bigsprut.taskman.data.local.entity.CategoryEntity
 import io.github.bigsprut.taskman.data.local.entity.ServerSettingsEntity
+import io.github.bigsprut.taskman.data.local.entity.TagEntity
+import io.github.bigsprut.taskman.data.local.entity.TaskEntity
 import io.github.bigsprut.taskman.data.local.entity.TaskWithCategory
+import io.github.bigsprut.taskman.domain.Category
+import io.github.bigsprut.taskman.domain.Tag
 import io.github.bigsprut.taskman.domain.Task
 import io.github.bigsprut.taskman.domain.TaskStatus
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 
 /**
@@ -17,7 +23,7 @@ import kotlinx.coroutines.flow.map
  */
 class DatabaseStateStore(
     private val database: TaskmanDatabase,
-) : StateStore {
+) : StateStore, TaskSnapshotReader {
 
     override suspend fun replaceSnapshot(snapshot: StateSnapshot) {
         database.withTransaction {
@@ -44,8 +50,25 @@ class DatabaseStateStore(
         }
     }
 
-    override fun observeTasks(): Flow<List<Task>> =
-        database.stateDao().observeTasks().map { rows -> rows.map(TaskWithCategory::toDomain) }
+    /**
+     * Задачи + их теги: два потока Room склеиваются, чтобы доменная модель знала `tagIds`
+     * (фильтр по тегам и бейджи, §5.3-Ф1) без запроса на каждую строку.
+     */
+    override fun observeTasks(): Flow<List<Task>> = combine(
+        database.stateDao().observeTasks(),
+        database.stateDao().observeTaskTags(),
+    ) { rows, links ->
+        val tagsByTask: Map<String, List<String>> = links.groupBy({ it.taskId }, { it.tagId })
+        rows.map { row -> row.toDomain(tagsByTask[row.id].orEmpty()) }
+    }
+
+    override fun observeTags(): Flow<List<Tag>> =
+        database.stateDao().observeTagCatalog().map { tags -> tags.map(TagEntity::toDomain) }
+
+    override fun observeCategories(): Flow<List<Category>> =
+        database.stateDao().observeCategoryCatalog().map { categories ->
+            categories.map(CategoryEntity::toDomain)
+        }
 
     override suspend fun clear() {
         database.withTransaction {
@@ -61,16 +84,27 @@ class DatabaseStateStore(
             dao.deleteAllServerSettings()
         }
     }
+
+    override suspend fun taskEntity(id: String): TaskEntity? = database.stateDao().findTask(id)
+
+    override suspend fun tagIds(taskId: String): List<String> = database.stateDao().tagsOf(taskId)
 }
 
 /** Строка списка → доменная задача. */
-internal fun TaskWithCategory.toDomain(): Task = Task(
+internal fun TaskWithCategory.toDomain(tagIds: List<String>): Task = Task(
     id = id,
     title = title,
     status = TaskStatus.fromWireValue(status),
     statusDateTs = statusDateTs,
     parentId = parentId,
+    categoryId = categoryId,
     categoryTitle = categoryTitle?.takeIf { it.isNotBlank() },
     categoryColor = categoryColor,
     source = source?.takeIf { it.isNotBlank() },
+    tagIds = tagIds,
+    attachmentCount = attachmentCount,
 )
+
+internal fun TagEntity.toDomain(): Tag = Tag(id = id, title = title, color = color)
+
+internal fun CategoryEntity.toDomain(): Category = Category(id = id, title = title, color = color)

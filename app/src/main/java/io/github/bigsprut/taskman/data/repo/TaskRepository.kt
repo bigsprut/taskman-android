@@ -6,9 +6,13 @@ import io.github.bigsprut.taskman.domain.StatusOrder
 import io.github.bigsprut.taskman.domain.Task
 import java.io.IOException
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
@@ -63,6 +67,16 @@ class TaskRepository(
     private val _syncStatus = MutableStateFlow(SyncStatus())
     val syncStatus: StateFlow<SyncStatus> = _syncStatus.asStateFlow()
 
+    /**
+     * События авторизации — из синхронизации и из мутаций. Отдельный поток, потому что
+     * мутация с 401 обязана увести пользователя на вход так же, как это делает polling.
+     */
+    private val _authFailures = MutableSharedFlow<ApiFailure>(
+        extraBufferCapacity = AUTH_EVENTS_BUFFER,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+    val authFailures: SharedFlow<ApiFailure> = _authFailures.asSharedFlow()
+
     /** Задачи для списка, уже в порядке [StatusOrder]. */
     fun observeTasks(): Flow<List<Task>> = stateStore.observeTasks().map(StatusOrder::sort)
 
@@ -99,6 +113,11 @@ class TaskRepository(
                 is SyncOutcome.Failed -> status.copy(lastFailure = outcome.failure)
             }
         }
+        when (outcome) {
+            SyncOutcome.Unauthorized -> _authFailures.tryEmit(ApiFailure.Unauthorized)
+            SyncOutcome.DeviceNotApproved -> _authFailures.tryEmit(ApiFailure.DeviceNotApproved)
+            else -> Unit
+        }
         outcome
     }
 
@@ -111,6 +130,11 @@ class TaskRepository(
     suspend fun clearLocalData() = syncMutex.withLock {
         stateStore.clear()
         _syncStatus.value = SyncStatus()
+    }
+
+    /** Сообщить сессии об отказе авторизации, полученном вне [refresh] (мутации). */
+    fun reportAuthFailure(failure: ApiFailure) {
+        _authFailures.tryEmit(failure)
     }
 
     private suspend fun fetchAndStore(): SyncOutcome {
@@ -136,5 +160,9 @@ class TaskRepository(
 
         stateStore.replaceSnapshot(StateMapper.toSnapshot(body))
         return SyncOutcome.Success(body.tasks.size)
+    }
+
+    private companion object {
+        const val AUTH_EVENTS_BUFFER = 8
     }
 }

@@ -5,6 +5,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import io.github.bigsprut.taskman.R
+import io.github.bigsprut.taskman.domain.StatusFilter
 import io.github.bigsprut.taskman.domain.TaskStatus
 
 /** Подпись статуса в списке (все строки — русские, в ресурсах, §5.4). */
@@ -26,4 +27,13 @@ fun TaskStatus.labelColor(): Color = when (this) {
     TaskStatus.CREATED -> MaterialTheme.colorScheme.onSurfaceVariant
     TaskStatus.COMPLETED -> MaterialTheme.colorScheme.tertiary
     TaskStatus.CANCELED -> MaterialTheme.colorScheme.error
+}
+
+/** Подпись чипа фильтра по статусу (§5.3-Ф1). */
+@StringRes
+fun StatusFilter.labelRes(): Int = when (this) {
+    StatusFilter.ACTIVE -> R.string.filter_active
+    StatusFilter.COMPLETED -> R.string.filter_completed
+    StatusFilter.CANCELED -> R.string.filter_canceled
+    StatusFilter.ALL -> R.string.filter_all
 }

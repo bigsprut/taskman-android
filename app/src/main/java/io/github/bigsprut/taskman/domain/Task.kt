@@ -6,8 +6,12 @@ package io.github.bigsprut.taskman.domain
  * @property statusDateTs unix-секунды последней смены статуса (последняя запись истории статусов,
  *   иначе дата закрытия/обновления/создания). По этому полю сравниваются задачи внутри группы
  *   `STATUS_ORDER` (§5.3, Ф0: «внутри группы — свежесть даты статуса»).
+ * @property categoryId нужен фильтру по категориям (в списке показывается название, но
+ *   сравниваем по id).
  * @property categoryColor цвет категории в виде `#RRGGBB` (приходит с сервера как есть).
  * @property source сотрудник-источник задачи: сервер отдаёт имя строкой, а не id.
+ * @property tagIds теги задачи — для фильтра по тегам и бейджей (§5.3-Ф1).
+ * @property attachmentCount число неудалённых вложений — бейдж в строке списка.
  */
 data class Task(
     val id: String,
@@ -15,9 +19,12 @@ data class Task(
     val status: TaskStatus,
     val statusDateTs: Double,
     val parentId: String?,
+    val categoryId: String?,
     val categoryTitle: String?,
     val categoryColor: String?,
     val source: String?,
+    val tagIds: List<String> = emptyList(),
+    val attachmentCount: Int = 0,
 ) {
     /** Подзадача: сервер отдаёт её в общем списке с заполненным `parent_id`. */
     val isSubtask: Boolean get() = parentId != null

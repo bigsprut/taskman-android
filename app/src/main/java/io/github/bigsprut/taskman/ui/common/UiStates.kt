@@ -85,6 +85,7 @@ fun EmptyState(
     message: String,
     modifier: Modifier = Modifier,
     onRetry: (() -> Unit)? = null,
+    retryLabel: String = stringResource(R.string.action_retry),
 ) {
     Column(
         modifier = modifier
@@ -109,7 +110,7 @@ fun EmptyState(
         if (onRetry != null) {
             Spacer(Modifier.height(24.dp))
             Button(onClick = onRetry) {
-                Text(stringResource(R.string.action_retry))
+                Text(retryLabel)
             }
         }
     }

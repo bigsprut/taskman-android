@@ -7,6 +7,7 @@ import io.github.bigsprut.taskman.data.remote.ConnectionHolder
 import io.github.bigsprut.taskman.data.remote.NetworkFactory
 import io.github.bigsprut.taskman.data.repo.DatabaseStateStore
 import io.github.bigsprut.taskman.data.repo.StateStore
+import io.github.bigsprut.taskman.data.repo.TaskMutationRepository
 import io.github.bigsprut.taskman.data.repo.TaskRepository
 import io.github.bigsprut.taskman.data.settings.AndroidKeystoreTokenCodec
 import io.github.bigsprut.taskman.data.settings.ConnectionRepository
@@ -49,7 +50,19 @@ class AppContainer(context: Context) {
 
     private val database: TaskmanDatabase by lazy { TaskmanDatabase.build(applicationContext) }
 
-    private val stateStore: StateStore by lazy { DatabaseStateStore(database) }
+    /** Room-хранилище снапшота; оно же читает полную сущность задачи для мутаций (CAS-payload). */
+    private val databaseStateStore: DatabaseStateStore by lazy { DatabaseStateStore(database) }
 
-    val taskRepository: TaskRepository by lazy { TaskRepository(network.api, stateStore) }
+    /** Каталоги (теги/категории) для чипов фильтра. */
+    val catalogStore: StateStore by lazy { databaseStateStore }
+
+    val taskRepository: TaskRepository by lazy { TaskRepository(network.api, databaseStateStore) }
+
+    val taskMutationRepository: TaskMutationRepository by lazy {
+        TaskMutationRepository(
+            api = network.api,
+            reader = databaseStateStore,
+            tasks = taskRepository,
+        )
+    }
 }

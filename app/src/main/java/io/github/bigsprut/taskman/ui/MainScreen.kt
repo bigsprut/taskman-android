@@ -29,10 +29,13 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.bigsprut.taskman.R
+import io.github.bigsprut.taskman.ui.common.rememberFailureTexts
 import io.github.bigsprut.taskman.ui.common.userMessage
+import io.github.bigsprut.taskman.ui.list.ListMessage
 import io.github.bigsprut.taskman.ui.list.TaskListContent
 import io.github.bigsprut.taskman.ui.list.TaskListViewModel
 import io.github.bigsprut.taskman.ui.session.SessionViewModel
@@ -46,7 +49,8 @@ private const val TAB_SETTINGS = 1
  * Основной каркас: `Scaffold` + `TopAppBar` + `NavigationBar` (Список / Настройки), §5.2.
  *
  * Один `Scaffold` на оба раздела — так insets считаются один раз (`safeDrawing`), и нет
- * двойных отступов от вложенных Scaffold'ов. Снекбары показывает этот же Scaffold.
+ * двойных отступов от вложенных Scaffold'ов. Снекбары показывает этот же Scaffold:
+ * и предупреждение о показе кэша, и сообщения о мутациях (409, отказы сервера).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -56,24 +60,50 @@ fun MainScreen(
     modifier: Modifier = Modifier,
 ) {
     var selectedTab by rememberSaveable { mutableIntStateOf(TAB_TASKS) }
+    val scope = rememberCoroutineScope()
+    val failureTexts = rememberFailureTexts()
 
-    val tasks by taskListViewModel.tasks.collectAsStateWithLifecycle()
     val syncStatus by taskListViewModel.syncStatus.collectAsStateWithLifecycle()
     val connection by sessionViewModel.connection.collectAsStateWithLifecycle()
+    val rows by taskListViewModel.rows.collectAsStateWithLifecycle()
+    val counts by taskListViewModel.counts.collectAsStateWithLifecycle()
+    val filter by taskListViewModel.filter.collectAsStateWithLifecycle()
+    val tags by taskListViewModel.tags.collectAsStateWithLifecycle()
+    val categories by taskListViewModel.categories.collectAsStateWithLifecycle()
+    val expandedParents by taskListViewModel.expandedParents.collectAsStateWithLifecycle()
+    val pendingTaskIds by taskListViewModel.pendingTaskIds.collectAsStateWithLifecycle()
 
     val snackbarHostState = remember { SnackbarHostState() }
-    val scope = rememberCoroutineScope()
 
     val failure = syncStatus.lastFailure
     val failureText = failure?.userMessage()
     val cachedDataWarning = stringResource(R.string.list_cached_warning)
     val copiedMessage = stringResource(R.string.settings_copied)
+    val conflictToggleText = stringResource(R.string.conflict_toggle)
+    val conflictDeleteText = stringResource(R.string.conflict_delete)
+    val toggleFailedText = stringResource(R.string.toggle_failed)
+    val deleteFailedText = stringResource(R.string.delete_failed)
 
     // Если данные есть (из Room), ошибку синхронизации показываем снекбаром и не стираем
     // список с экрана: «нет сети» не означает «нет данных».
     LaunchedEffect(failure) {
-        if (failureText != null && tasks.isNotEmpty()) {
+        if (failureText != null && rows.isNotEmpty()) {
             snackbarHostState.showSnackbar("$cachedDataWarning · $failureText")
+        }
+    }
+
+    // Результаты мутаций: конфликт версий (409) и отказы сервера — точной причиной в снекбар.
+    LaunchedEffect(taskListViewModel) {
+        taskListViewModel.messages.collect { message ->
+            val text = when (message) {
+                ListMessage.ToggleConflict -> conflictToggleText
+                ListMessage.DeleteConflict -> conflictDeleteText
+                is ListMessage.ToggleFailed ->
+                    "$toggleFailedText: ${failureTexts.describe(message.failure)}"
+                is ListMessage.DeleteFailed ->
+                    "$deleteFailedText: ${failureTexts.describe(message.failure)}"
+            }
+            snackbarHostState.showSnackbar(text)
         }
     }
 
@@ -130,8 +160,21 @@ fun MainScreen(
         Box(Modifier.padding(contentPadding)) {
             when (selectedTab) {
                 TAB_TASKS -> TaskListContent(
-                    tasks = tasks,
+                    rows = rows,
+                    counts = counts,
+                    filter = filter,
+                    tags = tags,
+                    categories = categories,
                     syncStatus = syncStatus,
+                    expandedParents = expandedParents,
+                    pendingTaskIds = pendingTaskIds,
+                    onStatusFilterChange = taskListViewModel::setStatusFilter,
+                    onCategoryToggle = taskListViewModel::toggleCategory,
+                    onTagToggle = taskListViewModel::toggleTag,
+                    onResetFilter = taskListViewModel::resetFilter,
+                    onToggleCompleted = taskListViewModel::setCompleted,
+                    onToggleExpanded = taskListViewModel::toggleExpanded,
+                    onDeleteConfirmed = taskListViewModel::delete,
                     onRefresh = taskListViewModel::refresh,
                 )
 

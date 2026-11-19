@@ -2,12 +2,14 @@ package io.github.bigsprut.taskman.data.repo
 
 import androidx.room.withTransaction
 import io.github.bigsprut.taskman.data.local.TaskmanDatabase
+import io.github.bigsprut.taskman.data.local.entity.AttachmentEntity
 import io.github.bigsprut.taskman.data.local.entity.CategoryEntity
 import io.github.bigsprut.taskman.data.local.entity.EmployeeEntity
 import io.github.bigsprut.taskman.data.local.entity.ServerSettingsEntity
 import io.github.bigsprut.taskman.data.local.entity.TagEntity
 import io.github.bigsprut.taskman.data.local.entity.TaskEntity
 import io.github.bigsprut.taskman.data.local.entity.TaskWithCategory
+import io.github.bigsprut.taskman.domain.Attachment
 import io.github.bigsprut.taskman.domain.Category
 import io.github.bigsprut.taskman.domain.Employee
 import io.github.bigsprut.taskman.domain.Tag
@@ -26,7 +28,7 @@ import kotlinx.coroutines.flow.map
  */
 class DatabaseStateStore(
     private val database: TaskmanDatabase,
-) : StateStore, TaskSnapshotReader {
+) : StateStore, TaskSnapshotReader, io.github.bigsprut.taskman.data.attachments.AttachmentStore {
 
     override suspend fun replaceSnapshot(snapshot: StateSnapshot) {
         database.withTransaction {
@@ -105,6 +107,14 @@ class DatabaseStateStore(
         }
     }
 
+    override fun observeAttachments(taskId: String): Flow<List<Attachment>> =
+        database.stateDao().observeAttachments(taskId).map { attachments ->
+            attachments.map(AttachmentEntity::toDomain)
+        }
+
+    override suspend fun findAttachment(attachmentId: String): Attachment? =
+        database.stateDao().findAttachment(attachmentId)?.toDomain()
+
     override suspend fun taskEntity(id: String): TaskEntity? = database.stateDao().findTask(id)
 
     override suspend fun tagIds(taskId: String): List<String> = database.stateDao().tagsOf(taskId)
@@ -130,3 +140,11 @@ internal fun TagEntity.toDomain(): Tag = Tag(id = id, title = title, color = col
 internal fun CategoryEntity.toDomain(): Category = Category(id = id, title = title, color = color)
 
 internal fun EmployeeEntity.toDomain(): Employee = Employee(id = id, name = name)
+internal fun AttachmentEntity.toDomain(): Attachment = Attachment(
+    id = id,
+    taskId = taskId,
+    origName = origName,
+    mime = mime,
+    size = size,
+    createdAt = createdAt,
+)

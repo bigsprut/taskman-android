@@ -3,12 +3,15 @@ package io.github.bigsprut.taskman.ui.editor
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import io.github.bigsprut.taskman.data.attachments.AttachmentOutcome
+import io.github.bigsprut.taskman.data.attachments.AttachmentRepository
 import io.github.bigsprut.taskman.data.remote.ApiFailure
 import io.github.bigsprut.taskman.data.remote.TaskmanJson
 import io.github.bigsprut.taskman.data.repo.MutationOutcome
 import io.github.bigsprut.taskman.data.repo.StateStore
 import io.github.bigsprut.taskman.data.repo.TaskMutationRepository
 import io.github.bigsprut.taskman.data.repo.TaskRepository
+import io.github.bigsprut.taskman.domain.Attachment
 import io.github.bigsprut.taskman.domain.Category
 import io.github.bigsprut.taskman.domain.Employee
 import io.github.bigsprut.taskman.domain.Tag
@@ -21,9 +24,16 @@ import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -35,7 +45,19 @@ sealed interface EditorMessage {
     class SaveFailed(val failure: ApiFailure) : EditorMessage
 
     class SubtaskFailed(val failure: ApiFailure) : EditorMessage
+
+    /** Не удалось приложить/удалить/скачать вложение (Ф3). */
+    class AttachmentFailed(val failure: ApiFailure) : EditorMessage
+
+    /** Вложение скачано, но открыть/поделиться им не удалось (нет приложения-просмотрщика). */
+    data object AttachmentOpenFailed : EditorMessage
+
+    /** Файл скачан — UI может отдать его внешнему приложению. */
+    class AttachmentReady(val file: java.io.File, val attachment: Attachment, val action: AttachmentAction) : EditorMessage
 }
+
+/** Что сделать со скачанным вложением. */
+enum class AttachmentAction { OPEN, SHARE }
 
 /** Состояние листа-редактора. */
 data class EditorUiState(
@@ -65,9 +87,11 @@ data class EditorUiState(
  * - закрытие любым путём (жест, кнопка, системный back) вызывает [close], который сохраняет
  *   черновик, если он изменился; при ошибке лист остаётся открытым с сообщением.
  */
+@OptIn(ExperimentalCoroutinesApi::class)
 class TaskEditorViewModel(
     private val tasks: TaskRepository,
     private val mutations: TaskMutationRepository,
+    private val attachmentsRepo: AttachmentRepository,
     store: StateStore,
     private val savedState: SavedStateHandle,
 ) : ViewModel() {
@@ -80,6 +104,15 @@ class TaskEditorViewModel(
         onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
     val messages: SharedFlow<EditorMessage> = _messages.asSharedFlow()
+
+    /** Вложения текущей задачи (Ф3): список обновляется из Room после мутаций. */
+    val attachments: StateFlow<List<Attachment>> = _state
+        .map { it.taskId }
+        .distinctUntilChanged()
+        .flatMapLatest { taskId ->
+            if (taskId == null) flowOf(emptyList()) else attachmentsRepo.observeAttachments(taskId)
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS), emptyList())
 
     /** Версия, с которой сравниваем черновик (для dirty-проверки). */
     private var originalDraft: TaskDraft? = null
@@ -217,6 +250,50 @@ class TaskEditorViewModel(
         }
     }
 
+    // --- Вложения (Ф3): аплоад, удаление, открытие/шаринг ---
+
+    fun uploadAttachment(uri: String) {
+        val taskId = _state.value.taskId ?: return
+        viewModelScope.launch {
+            when (val outcome = attachmentsRepo.upload(taskId, uri)) {
+                AttachmentOutcome.Success -> Unit
+                is AttachmentOutcome.Failed -> _messages.emit(EditorMessage.AttachmentFailed(outcome.failure))
+            }
+        }
+    }
+
+    fun deleteAttachment(attachmentId: String) {
+        viewModelScope.launch {
+            when (val outcome = attachmentsRepo.delete(attachmentId)) {
+                AttachmentOutcome.Success -> Unit
+                is AttachmentOutcome.Failed -> _messages.emit(EditorMessage.AttachmentFailed(outcome.failure))
+            }
+        }
+    }
+
+    /** URL превью с токеном в query (ТЗ §4) — для Coil. */
+    fun attachmentUrl(attachmentId: String): String? = attachmentsRepo.url(attachmentId)
+
+    /**
+     * Скачивает вложение и отдаёт файл UI: открытие внешним просмотрщиком и «Поделиться»
+     * требуют `FileProvider`-uri и `Context`, поэтому сам Intent запускает слой UI.
+     */
+    fun downloadAttachment(attachment: Attachment, action: AttachmentAction) {
+        viewModelScope.launch {
+            val file = attachmentsRepo.download(attachment)
+            if (file == null) {
+                _messages.emit(EditorMessage.AttachmentOpenFailed)
+            } else {
+                _messages.emit(EditorMessage.AttachmentReady(file, attachment, action))
+            }
+        }
+    }
+
+    /** Сообщить UI, что открыть файл не удалось (нет просмотрщика/отказ системы). */
+    fun reportAttachmentOpenFailed() {
+        _messages.tryEmit(EditorMessage.AttachmentOpenFailed)
+    }
+
     private suspend fun reportSubtaskOutcome(outcome: MutationOutcome) {
         when (outcome) {
             MutationOutcome.Success -> Unit
@@ -314,6 +391,7 @@ class TaskEditorViewModel(
 
     private companion object {
         const val MESSAGES_BUFFER = 8
+        const val STOP_TIMEOUT_MILLIS = 5_000L
         const val draftKey = "editor_draft_json"
         const val draftTaskIdKey = "editor_draft_task_id"
     }

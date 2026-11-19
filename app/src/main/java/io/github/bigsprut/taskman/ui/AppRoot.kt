@@ -14,6 +14,7 @@ import io.github.bigsprut.taskman.ui.list.TaskListViewModel
 import io.github.bigsprut.taskman.ui.login.LoginScreen
 import io.github.bigsprut.taskman.ui.session.SessionUiState
 import io.github.bigsprut.taskman.ui.session.SessionViewModel
+import io.github.bigsprut.taskman.ui.settings.SettingsViewModel
 
 /**
  * Корень UI: одно из пяти состояний, без «промежуточных» экранов.
@@ -30,6 +31,7 @@ fun AppRoot(
     sessionViewModel: SessionViewModel,
     taskListViewModel: TaskListViewModel,
     editorViewModel: TaskEditorViewModel,
+    settingsViewModel: SettingsViewModel,
     modifier: Modifier = Modifier,
 ) {
     val sessionState by sessionViewModel.state.collectAsStateWithLifecycle()
@@ -67,6 +69,7 @@ fun AppRoot(
             sessionViewModel = sessionViewModel,
             taskListViewModel = taskListViewModel,
             editorViewModel = editorViewModel,
+            settingsViewModel = settingsViewModel,
             modifier = modifier,
         )
     }

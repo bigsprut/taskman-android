@@ -27,6 +27,8 @@ kotlinxSerialization = "1.13.0"
 kotlinxCoroutines = "1.11.0"
 # Парсер Markdown (Apache-2.0): разбор GFM без Android-зависимостей; рендеринг — свой Compose M3
 markdownParser = "0.7.18"
+# Coil 3: превью картинок вложений (Apache-2.0), сетевой движок — OkHttp
+coil = "3.6.3"
 
 # --- Тесты ---
 junit = "4.13.2"
@@ -64,6 +66,8 @@ okhttp = { module = "com.squareup.okhttp3:okhttp", version.ref = "okhttp" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinxSerialization" }
 kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "kotlinxCoroutines" }
 markdown-parser = { module = "org.jetbrains:markdown", version.ref = "markdownParser" }
+coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil" }
+coil-network-okhttp = { module = "io.coil-kt.coil3:coil-network-okhttp", version.ref = "coil" }
 
 junit = { module = "junit:junit", version.ref = "junit" }
 androidx-test-ext-junit = { module = "androidx.test.ext:junit", version.ref = "androidxTestExtJunit" }

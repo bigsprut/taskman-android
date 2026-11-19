@@ -1,8 +1,14 @@
 package io.github.bigsprut.taskman.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.material.icons.Icons
@@ -13,6 +19,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
@@ -28,12 +35,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.ui.Modifier
 
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.bigsprut.taskman.R
 import io.github.bigsprut.taskman.ui.common.rememberFailureTexts
+import io.github.bigsprut.taskman.ui.editor.AttachmentAction
 import io.github.bigsprut.taskman.ui.editor.EditorMessage
 import io.github.bigsprut.taskman.ui.editor.TaskEditorSheet
 import io.github.bigsprut.taskman.ui.editor.TaskEditorViewModel
@@ -43,6 +55,8 @@ import io.github.bigsprut.taskman.ui.list.TaskListContent
 import io.github.bigsprut.taskman.ui.list.TaskListViewModel
 import io.github.bigsprut.taskman.ui.session.SessionViewModel
 import io.github.bigsprut.taskman.ui.settings.SettingsContent
+import io.github.bigsprut.taskman.ui.settings.SettingsMessage
+import io.github.bigsprut.taskman.ui.settings.SettingsViewModel
 import kotlinx.coroutines.launch
 
 private const val TAB_TASKS = 0
@@ -61,10 +75,13 @@ fun MainScreen(
     sessionViewModel: SessionViewModel,
     taskListViewModel: TaskListViewModel,
     editorViewModel: TaskEditorViewModel,
+    settingsViewModel: SettingsViewModel,
     modifier: Modifier = Modifier,
 ) {
     var selectedTab by rememberSaveable { mutableIntStateOf(TAB_TASKS) }
     val scope = rememberCoroutineScope()
+    // Context нужен только для запуска внешних Intent (открытие/шаринг вложений).
+    val context = LocalContext.current
     val failureTexts = rememberFailureTexts()
 
     val syncStatus by taskListViewModel.syncStatus.collectAsStateWithLifecycle()
@@ -83,6 +100,10 @@ fun MainScreen(
     val failureText = failure?.userMessage()
     val cachedDataWarning = stringResource(R.string.list_cached_warning)
     val copiedMessage = stringResource(R.string.settings_copied)
+    val employees by settingsViewModel.employeeList.collectAsStateWithLifecycle()
+    val employeeFailedText = stringResource(R.string.settings_employee_failed)
+    val sharedFiles by taskListViewModel.sharedFiles.collectAsStateWithLifecycle()
+    val shareDialogText = stringResource(R.string.share_pick_task_text, sharedFiles.size)
     val conflictToggleText = stringResource(R.string.conflict_toggle)
     val conflictDeleteText = stringResource(R.string.conflict_delete)
     val toggleFailedText = stringResource(R.string.toggle_failed)
@@ -90,6 +111,10 @@ fun MainScreen(
     val editorConflictText = stringResource(R.string.editor_save_conflict)
     val editorSaveFailedText = stringResource(R.string.editor_save_failed)
     val editorSubtaskFailedText = stringResource(R.string.editor_subtask_failed)
+    val editorAttachmentFailedText = stringResource(R.string.editor_attachment_failed)
+    val attachmentOpenFailedText = stringResource(R.string.attachment_open_failed)
+    val shareFailedText = stringResource(R.string.share_attach_failed)
+    val shareAttachedText = stringResource(R.string.share_attached)
 
     // Если данные есть (из Room), ошибку синхронизации показываем снекбаром и не стираем
     // список с экрана: «нет сети» не означает «нет данных».
@@ -109,6 +134,9 @@ fun MainScreen(
                     "$toggleFailedText: ${failureTexts.describe(message.failure)}"
                 is ListMessage.DeleteFailed ->
                     "$deleteFailedText: ${failureTexts.describe(message.failure)}"
+                is ListMessage.ShareAttachFailed ->
+                    "$shareFailedText: ${failureTexts.describe(message.failure)}"
+                ListMessage.SharedFilesAttached -> shareAttachedText
             }
             snackbarHostState.showSnackbar(text)
         }
@@ -123,8 +151,38 @@ fun MainScreen(
                     "$editorSaveFailedText: ${failureTexts.describe(message.failure)}"
                 is EditorMessage.SubtaskFailed ->
                     "$editorSubtaskFailedText: ${failureTexts.describe(message.failure)}"
+                is EditorMessage.AttachmentFailed ->
+                    "$editorAttachmentFailedText: ${failureTexts.describe(message.failure)}"
+                EditorMessage.AttachmentOpenFailed -> attachmentOpenFailedText
+                is EditorMessage.AttachmentReady -> {
+                    // Открытие и шаринг требуют Context: сначала показать, потом (если не вышло)
+                    // сообщить. Ошибка запуска UI показывает через reportAttachmentOpenFailed.
+                    val launched = io.github.bigsprut.taskman.ui.common.AttachmentIntents.launch(
+                        context = context,
+                        file = message.file,
+                        mimeType = message.attachment.mime,
+                        action = if (message.action == AttachmentAction.OPEN) {
+                            io.github.bigsprut.taskman.ui.common.AttachmentIntents.Action.OPEN
+                        } else {
+                            io.github.bigsprut.taskman.ui.common.AttachmentIntents.Action.SHARE
+                        },
+                    )
+                    if (!launched) editorViewModel.reportAttachmentOpenFailed()
+                    return@collect
+                }
             }
             snackbarHostState.showSnackbar(text)
+        }
+    }
+
+    // Сообщения справочника сотрудников (Ф3).
+    LaunchedEffect(settingsViewModel) {
+        settingsViewModel.messages.collect { message ->
+            when (message) {
+                is SettingsMessage.EmployeeFailed -> snackbarHostState.showSnackbar(
+                    "$employeeFailedText: ${failureTexts.describe(message.failure)}",
+                )
+            }
         }
     }
 
@@ -201,6 +259,10 @@ fun MainScreen(
                 )
 
                 else -> SettingsContent(
+                    employees = employees,
+                    onAddEmployee = settingsViewModel::addEmployee,
+                    onRenameEmployee = settingsViewModel::renameEmployee,
+                    onDeleteEmployee = settingsViewModel::deleteEmployee,
                     connection = connection,
                     onCopied = {
                         scope.launch { snackbarHostState.showSnackbar(copiedMessage) }
@@ -212,4 +274,58 @@ fun MainScreen(
     }
 
     TaskEditorSheet(viewModel = editorViewModel)
+
+    if (sharedFiles.isNotEmpty()) {
+        ShareTargetDialog(
+            tasks = rows.map { it.task }.distinctBy { it.id },
+            text = shareDialogText,
+            onPick = taskListViewModel::attachSharedTo,
+            onDismiss = taskListViewModel::dismissSharedFiles,
+        )
+    }
+}
+
+/**
+ * Выбор задачи для файлов, пришедших из «Поделиться в Задачи» (§5.3-Ф3).
+ * Список — то, что сейчас видно в фильтре; так проще найти нужную задачу.
+ */
+@Composable
+private fun ShareTargetDialog(
+    tasks: List<io.github.bigsprut.taskman.domain.Task>,
+    text: String,
+    onPick: (io.github.bigsprut.taskman.domain.Task) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.share_pick_task_title)) },
+        text = {
+            Column {
+                Text(text = text, style = MaterialTheme.typography.bodyMedium)
+                Spacer(Modifier.padding(top = 8.dp))
+                if (tasks.isEmpty()) {
+                    Text(
+                        text = stringResource(R.string.share_no_tasks),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                LazyColumn(modifier = Modifier.heightIn(max = 320.dp)) {
+                    items(tasks, key = { it.id }) { task ->
+                        Text(
+                            text = task.title,
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onPick(task) }
+                                .padding(vertical = 12.dp),
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) }
+        },
+    )
 }

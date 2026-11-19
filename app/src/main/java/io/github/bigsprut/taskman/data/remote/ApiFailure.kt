@@ -28,6 +28,9 @@ sealed class ApiFailure(message: String?, cause: Throwable? = null) : Exception(
     /** Прочие ответы сервера с кодом ошибки. */
     class Http(val code: Int, val serverError: String? = null) : ApiFailure("http-$code")
 
+    /** Пустое/недопустимое значение, введённое пользователем: на сервер не отправляем. */
+    data object InvalidInput : ApiFailure("invalid-input")
+
     /** Ответ 2xx не разобрался в модель (расхождение контракта — повод для issue). */
     class Malformed(cause: Throwable) : ApiFailure("malformed", cause)
 

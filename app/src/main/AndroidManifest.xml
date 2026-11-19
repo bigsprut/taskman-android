@@ -3,7 +3,7 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <!-- Только сеть: ACCESS_NETWORK_STATE не запрашиваем, пока ConnectivityManager не
-         используется (наименьшие привилегии, ТЗ §7). -->
+         используется (наименьшие привилегии, ТЗ §7). Ф4 вернёт его вместе с офлайн-очередью. -->
     <uses-permission android:name="android.permission.INTERNET" />
 
     <application
@@ -29,7 +29,30 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+
+            <!-- «Поделиться в Задачи» (ТЗ §5.3-Ф3: ACTION_SEND/SEND_MULTI intent-filter) -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
         </activity>
+
+        <!-- FileProvider: отдаём внешним приложениям только скачанные вложения из кэша. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
     </application>
 
 </manifest>

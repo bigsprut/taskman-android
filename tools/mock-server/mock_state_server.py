@@ -5,16 +5,20 @@
 ЭТО НЕ СЕРВЕР ПРОДУКТА И НЕ ЭМУЛЯТОР БЭКЕНДА ЦЕЛИКОМ. Состояние читается из
 фикстуры `fixtures/api/state.sample.json` в память при старте и дальше меняется
 только мутациями клиента; после перезапуска всё возвращается к фикстуре.
-Поддерживается минимальный набор записи, который нужен клиенту Ф1:
+Поддерживается минимальный набор записи, который нужен клиенту Ф1–Ф3:
 
   * `GET /api/state` — текущее состояние (soft-deleted задачи не попадают);
   * `POST /api/tasks` — UPSERT списка задач полным объектом с CAS по `updated_at`;
   * `POST /api/tasks/{id}/toggle` — смена статуса задачи;
-  * `DELETE /api/tasks/{id}` — soft-delete задачи и всего поддерева.
+  * `DELETE /api/tasks/{id}` — soft-delete задачи и всего поддерева;
+  * `POST /api/tasks/{id}/attachments` — multipart-аплоад (поле формы `file`);
+  * `GET /api/attachments/{id}?token=…` — байты файла (токен ТОЛЬКО query);
+  * `DELETE /api/attachments/{id}` — soft-delete вложения;
+  * `POST/PATCH/DELETE /api/employees[/{id}]` — справочник сотрудников.
 
-Вложения, теги, категории, списки, сотрудники, настройки и `/api/sync` только
-читаются из фикстуры и не меняются. Значения по умолчанию (адрес 127.0.0.1,
-порт 8443, токен) — только для локального стенда, в продукт их переносить нельзя.
+Теги, категории, списки, настройки и `/api/sync` только читаются из фикстуры и
+не меняются. Значения по умолчанию (адрес 127.0.0.1, порт 8443, токен) — только
+для локального стенда, в продукт их переносить нельзя.
 
 Реализация — только стандартная библиотека Python 3, pip-зависимостей нет.
 
@@ -35,6 +39,13 @@
     смене статуса или явном `status_date`;
   * флаг `--state-out PATH` — после каждой мутации кладёт текущее состояние
     в файл (смотреть глазами), по умолчанию не пишется;
+  * multipart разбирается вручную по boundary: модуль `cgi` в Python 3.13
+    удалён, сторонние библиотеки не используются. Файл хранится в памяти;
+    потолок файла — 8 МиБ, больше — 413. Поле формы обязано называться `file`;
+  * `GET /api/attachments/{id}` принимает токен только query-параметром
+    `?token=…` (ТЗ §4); заголовок `Token` на этом пути не читается;
+  * вложения из фикстуры отдаются заглушкой объявленного размера: самих байт
+    фикстура не содержит;
   * остальные пути — 404 {"error": "not_found"}.
 
 Запуск (из корня репозитория):
@@ -50,6 +61,7 @@ import copy
 import gzip
 import hashlib
 import json
+import locale
 import os
 import re
 import signal
@@ -57,9 +69,10 @@ import sys
 import threading
 import time
 import uuid
+from collections import namedtuple
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import unquote
+from urllib.parse import parse_qs, quote, unquote
 
 # --- значения по умолчанию -------------------------------------------------
 
@@ -70,10 +83,17 @@ DEFAULT_TOKEN = "local-dev-token"
 #: Поддерживаемые пути API.
 STATE_PATH = "/api/state"
 TASKS_PATH = "/api/tasks"
+EMPLOYEES_PATH = "/api/employees"
 #: `/api/tasks/{id}/toggle`; id декодируется из percent-encoding отдельно.
 TOGGLE_PATH_RE = re.compile(r"^/api/tasks/(?P<task_id>[^/]+)/toggle$")
+#: `/api/tasks/{id}/attachments` — multipart-аплоад (поле формы `file`).
+ATTACH_UPLOAD_PATH_RE = re.compile(r"^/api/tasks/(?P<task_id>[^/]+)/attachments$")
 #: `/api/tasks/{id}`.
 TASK_PATH_RE = re.compile(r"^/api/tasks/(?P<task_id>[^/]+)$")
+#: `/api/attachments/{id}`: GET — байты по `?token=…`, DELETE — soft-delete.
+ATTACHMENT_PATH_RE = re.compile(r"^/api/attachments/(?P<attachment_id>[^/]+)$")
+#: `/api/employees/{id}` — PATCH/DELETE карточки сотрудника.
+EMPLOYEE_PATH_RE = re.compile(r"^/api/employees/(?P<employee_id>[^/]+)$")
 
 #: Маршрут -> разрешённые методы. OPTIONS разрешён на всех маршрутах.
 ROUTE_METHODS = {
@@ -81,14 +101,25 @@ ROUTE_METHODS = {
     "tasks": ("POST",),
     "toggle": ("POST",),
     "task": ("DELETE",),
+    "attachment_upload": ("POST",),
+    "attachment": ("GET", "DELETE"),
+    "employees": ("POST",),
+    "employee": ("PATCH", "DELETE"),
 }
 
 #: Статусы задачи из контракта (ТЗ §4); `needsAction` — легаси-синоним `created`.
 TASK_STATUSES = ("created", "inprogress", "completed", "canceled")
 LEGACY_STATUSES = {"needsAction": "created"}
 
-#: Потолок тела запроса: защищает стенд от случайной мегабайтной отправки.
+#: Потолок тела JSON-запроса: защищает стенд от случайной мегабайтной отправки.
 MAX_BODY_BYTES = 8 * 1024 * 1024
+
+#: Потолок одного вложения (файла), как и у JSON-тела, — 8 МиБ (ТЗ §4).
+MAX_ATTACHMENT_BYTES = 8 * 1024 * 1024
+
+#: Запас на multipart-обвязку (заголовки частей и boundary): тело запроса может
+#: быть чуть больше 8 МиБ, а ограничение относится к самому файлу.
+MULTIPART_OVERHEAD_BYTES = 64 * 1024
 
 #: Допуск при сравнении `updated_at`: клиент может округлить double при
 #: сериализации, а «устаревшая» версия отличается на секунды.
@@ -252,6 +283,225 @@ def parse_json_body(body):
         raise BadRequestError("невалидный JSON: {0}".format(exc))
 
 
+# --- multipart/form-data без cgi -------------------------------------------
+# Модуль `cgi` удалён в Python 3.13, а тащить сторонние библиотеки на стенд
+# не хочется. Разбор ручной по boundary: curl и OkHttp шлют именно такой
+# multipart, а `email.parser` не используем намеренно — он разбирает тело
+# построчно и может исказить двоичные байты вложений.
+
+
+#: Поле формы `file`: (имя файла, mime, байты).
+MultipartFile = namedtuple("MultipartFile", "orig_name mime data")
+
+
+def _split_outside_quotes(value, separator):
+    """Делит строку по separator, не заглядывая внутрь кавычек."""
+    parts = []
+    current = []
+    quoted = False
+    escaped = False
+    for char in value:
+        if escaped:
+            current.append(char)
+            escaped = False
+        elif char == "\\" and quoted:
+            current.append(char)
+            escaped = True
+        elif char == '"':
+            quoted = not quoted
+            current.append(char)
+        elif char == separator and not quoted:
+            parts.append("".join(current))
+            current = []
+        else:
+            current.append(char)
+    parts.append("".join(current))
+    return parts
+
+
+def _unquote(value):
+    """Снимает экранирование внутри кавычек: `\\"` -> `"`, `\\\\` -> `\\`."""
+    result = []
+    escaped = False
+    for char in value:
+        if escaped:
+            result.append(char)
+            escaped = False
+        elif char == "\\":
+            escaped = True
+        else:
+            result.append(char)
+    if escaped:
+        result.append("\\")
+    return "".join(result)
+
+
+def parse_header_params(value):
+    """
+    Разбирает `Content-Type`/`Content-Disposition`: (`основной тип`, {параметры}).
+
+    Кавычки у значений снимаются, `\\"`/`\\\\` разэкранируются. Имена файлов с
+    кавычками присылают и curl (`\\"`), и OkHttp (percent-кодирует в `%22`).
+    """
+    parts = _split_outside_quotes(value or "", ";")
+    main = parts[0].strip().lower()
+    params = {}
+    for chunk in parts[1:]:
+        name, separator, raw = chunk.partition("=")
+        if not separator:
+            continue
+        parsed = raw.strip()
+        if len(parsed) >= 2 and parsed[0] == '"' and parsed[-1] == '"':
+            parsed = _unquote(parsed[1:-1])
+        params[name.strip().lower()] = parsed
+    return main, params
+
+
+def _decode_header_text(raw):
+    """
+    Декодирует байты заголовка части multipart.
+
+    Android (OkHttp) присылает имя файла в UTF-8, а `curl.exe` на Windows —
+    в системной однобайтовой кодировке (на русской машине cp1251). Сначала
+    пробуем строгий UTF-8, потом локальную кодировку и cp1251; совсем битые
+    байты заменяем, чтобы запрос не падал из-за имени файла.
+    """
+    candidates = ["utf-8"]
+    preferred = locale.getpreferredencoding(False)
+    if preferred and preferred.lower().replace("-", "") != "utf8":
+        candidates.append(preferred)
+    candidates.extend(["cp1251", "latin-1"])
+    for encoding in candidates:
+        try:
+            return raw.decode(encoding)
+        except (UnicodeDecodeError, LookupError):
+            continue
+    return raw.decode("utf-8", "replace")
+
+
+def parse_part_headers(raw):
+    """
+    Заголовки одной части multipart: имена в нижнем регистре, перенос строк склеен.
+
+    Части приходят с `\\r\\n`, но принимаем и `\\n`: так удобнее тестировать
+    мок вручную, а curl/OkHttp всё равно шлют CRLF.
+    """
+    headers = {}
+    last = None
+    for line in raw.replace(b"\r\n", b"\n").split(b"\n"):
+        if not line.strip():
+            continue
+        if line[:1] in (b" ", b"\t") and last is not None:
+            headers[last] += " " + _decode_header_text(line.strip())
+            continue
+        name, separator, value = line.partition(b":")
+        if not separator:
+            continue
+        key = name.strip().decode("ascii", "replace").lower()
+        headers[key] = _decode_header_text(value.strip())
+        last = key
+    return headers
+
+
+def _clean_header(value):
+    """Значение для HTTP-заголовка: печатный ASCII без управляющих символов."""
+    text = (value or "").strip()
+    if not text:
+        return ""
+    if any(ord(char) < 0x20 or ord(char) > 0x7E for char in text):
+        return ""
+    return text
+
+
+def parse_multipart_file(content_type, body):
+    """
+    Достаёт поле формы `file` из multipart/form-data.
+
+    Требования контракта: тело обязано быть multipart, а поле формы — `file`.
+    Иначе BadRequestError (400). Части с другими именами игнорируются.
+    """
+    media_type, params = parse_header_params(content_type)
+    if media_type != "multipart/form-data":
+        raise BadRequestError("ожидался multipart/form-data")
+    boundary = (params.get("boundary") or "").strip()
+    if not boundary:
+        raise BadRequestError("в Content-Type нет boundary")
+    if not body:
+        raise BadRequestError("пустое тело запроса")
+    delimiter = b"--" + boundary.encode("utf-8", "replace")
+    chunks = body.split(delimiter)
+    if len(chunks) < 2:
+        raise BadRequestError("тело не похоже на multipart: boundary не найден")
+
+    # chunks[0] — preamble до первого разделителя; дальше части, последняя
+    # начинается с `--` (закрывающий разделитель `--boundary--`).
+    for chunk in chunks[1:]:
+        if chunk.startswith(b"--"):
+            break
+        if chunk.startswith(b"\r\n"):
+            chunk = chunk[2:]
+        elif chunk.startswith(b"\n"):
+            chunk = chunk[1:]
+        head, separator, data = chunk.partition(b"\r\n\r\n")
+        if not separator:
+            head, separator, data = chunk.partition(b"\n\n")
+        if not separator:
+            continue
+        headers = parse_part_headers(head)
+        disposition, disposition_params = parse_header_params(
+            headers.get("content-disposition", "")
+        )
+        if not disposition.startswith("form-data"):
+            continue
+        if disposition_params.get("name") != "file":
+            continue
+        # MIME кладёт CRLF между телом части и boundary — он не часть файла.
+        if data.endswith(b"\r\n"):
+            data = data[:-2]
+        elif data.endswith(b"\n"):
+            data = data[:-1]
+        orig_name = disposition_params.get("filename") or "file"
+        mime = _clean_header(headers.get("content-type")) or "application/octet-stream"
+        return MultipartFile(orig_name, mime, bytes(data))
+    raise BadRequestError("в multipart нет поля file")
+
+
+def content_disposition_inline(orig_name):
+    """
+    `inline; filename="…"` для ответа вложения.
+
+    Значение заголовка http.server кодирует в latin-1, поэтому всё не-ASCII
+    percent-кодируем заранее — иначе `send_header` упадёт на кириллице, а в
+    ответе будет мусор.
+    """
+    return 'inline; filename="{0}"'.format(quote(orig_name or "file", safe=""))
+
+
+def log_text(value):
+    """Текст для строки журнала: журнал — одна строка на запрос, без переводов строк."""
+    return re.sub(r"[\r\n\t]", " ", str(value or ""))
+
+
+def _fixture_attachment_bytes(attachment):
+    """
+    Заглушка для вложения из фикстуры: самих байт в ней нет, только описание.
+
+    Размер берём из `size`, чтобы `Content-Length` совпадал с состоянием; для
+    `text/*` заполняем текстом, остальное — нулями. Это не файл продукта, а
+    только проверка пути скачивания.
+    """
+    try:
+        size = max(0, int(attachment.get("size") or 0))
+    except (TypeError, ValueError):
+        size = 0
+    size = min(size, MAX_ATTACHMENT_BYTES)
+    mime = (attachment.get("mime") or "").lower()
+    if mime.startswith("text/"):
+        sample = "Файл из фикстуры: байт в ней нет, это заглушка мока.\n".encode("utf-8")
+        return (sample * (size // len(sample) + 1))[:size]
+    return b"\x00" * size
+
+
 def _same_version(expected, actual):
     """Сравнивает версии задач с допуском на округление double."""
     if actual is None:
@@ -260,6 +510,21 @@ def _same_version(expected, actual):
         return abs(float(expected) - float(actual)) < VERSION_EPSILON
     except (TypeError, ValueError):
         return False
+
+
+def _employee_name(payload):
+    """
+    Имя сотрудника из тела `{name}`.
+
+    Имя обрезается по краям (как и на сервере), пустое — 400: запись без имени
+    в справочнике бессмысленна.
+    """
+    if not isinstance(payload, dict):
+        raise BadRequestError("тело должно быть JSON-объектом с полем name")
+    name = _text(payload.get("name"), "name").strip()
+    if not name:
+        raise BadRequestError("name не может быть пустым")
+    return name
 
 
 # --- состояние в памяти ----------------------------------------------------
@@ -284,6 +549,12 @@ class StateStore:
         self._base = {}
         self._tasks = []
         self._index = {}
+        self._employees = []
+        self._employee_index = {}
+        #: id вложения -> (задача, запись вложения в задаче).
+        self._attachments = {}
+        #: id вложения -> байты файла (только для загруженных на этот стенд).
+        self._blobs = {}
         if self._static:
             return
         self._base = {
@@ -299,6 +570,16 @@ class StateStore:
             task.setdefault("tags", [])
             task.setdefault("history", [])
         self._index = {task["id"]: task for task in self._tasks if task.get("id")}
+        self._employees = copy.deepcopy(doc.get("employees") or [])
+        self._employee_index = {
+            employee["id"]: employee
+            for employee in self._employees
+            if isinstance(employee, dict) and employee.get("id")
+        }
+        for task in self._tasks:
+            for attachment in task.get("attachments") or []:
+                if isinstance(attachment, dict) and attachment.get("id"):
+                    self._attachments[attachment["id"]] = (task, attachment)
 
     # --- чтение ---------------------------------------------------------
 
@@ -345,11 +626,15 @@ class StateStore:
         for key, value in self._fixture.doc.items():
             if key == "tasks":
                 document["tasks"] = tasks
+            elif key == "employees":
+                # Справочник сотрудников живёт в памяти: удалённые исчезают, новые появляются.
+                document["employees"] = [dict(employee) for employee in self._employees]
             elif key == "server_time":
                 document["server_time"] = now
             else:
                 document[key] = value
         document.setdefault("tasks", tasks)
+        document.setdefault("employees", [dict(employee) for employee in self._employees])
         document.setdefault("server_time", now)
         return document
 
@@ -527,6 +812,108 @@ class StateStore:
             response = {"deleted": task_id}
         return response, "deleted tasks={0}".format(len(subtree))
 
+    # --- вложения -------------------------------------------------------
+
+    def add_attachment(self, task_id, orig_name, mime, data):
+        """
+        Аплоад вложения (`POST /api/tasks/{id}/attachments`), байты — в памяти.
+
+        `updated_at` задачи не трогаем: аплоад не меняет версию задачи, и CAS
+        после него остаётся прежним (клиенту не придётся перечитывать версию).
+        """
+        if self._static:
+            raise FixtureNotObjectError("фикстура не JSON-объект")
+        with self._lock:
+            task = self._index.get(task_id)
+            if task is None or task.get("deleted"):
+                raise NotFoundError(task_id)
+            now = time.time()
+            attachment = {
+                "id": uuid.uuid4().hex,
+                "task_id": task["id"],
+                "orig_name": orig_name,
+                "mime": mime,
+                "size": len(data),
+                "created_at": now,
+                "deleted": 0,
+            }
+            task.setdefault("attachments", []).append(attachment)
+            self._attachments[attachment["id"]] = (task, attachment)
+            self._blobs[attachment["id"]] = data
+            response = {"id": attachment["id"], "name": orig_name, "size": len(data)}
+        summary = "attachment_upload name={0} size={1}".format(
+            log_text(orig_name), len(data)
+        )
+        return response, summary
+
+    def attachment_blob(self, attachment_id):
+        """Байты вложения для `GET /api/attachments/{id}`: (вложение, байты)."""
+        with self._lock:
+            entry = self._attachments.get(attachment_id)
+            if entry is None:
+                raise NotFoundError(attachment_id)
+            task, attachment = entry
+            # Вложение удалённой задачи тоже недоступно: в `/api/state` его нет.
+            if task.get("deleted") or attachment.get("deleted"):
+                raise NotFoundError(attachment_id)
+            stored = self._blobs.get(attachment_id)
+            if stored is None:
+                stored = _fixture_attachment_bytes(attachment)
+            return dict(attachment), stored
+
+    def delete_attachment(self, attachment_id):
+        """Soft-delete вложения (`DELETE /api/attachments/{id}`)."""
+        if self._static:
+            raise FixtureNotObjectError("фикстура не JSON-объект")
+        with self._lock:
+            entry = self._attachments.get(attachment_id)
+            if entry is None:
+                raise NotFoundError(attachment_id)
+            task, attachment = entry
+            if task.get("deleted") or attachment.get("deleted"):
+                raise NotFoundError(attachment_id)
+            attachment["deleted"] = 1
+            self._blobs.pop(attachment_id, None)
+        return {"deleted": attachment_id}, "attachment_deleted"
+
+    # --- сотрудники -----------------------------------------------------
+
+    def create_employee(self, payload):
+        """`POST /api/employees`: имя обрезается по краям, пустое — 400."""
+        if self._static:
+            raise FixtureNotObjectError("фикстура не JSON-объект")
+        name = _employee_name(payload)
+        with self._lock:
+            employee = {"id": uuid.uuid4().hex, "name": name}
+            self._employees.append(employee)
+            self._employee_index[employee["id"]] = employee
+            response = {"id": employee["id"], "name": employee["name"]}
+        return response, "employee_created"
+
+    def update_employee(self, employee_id, payload):
+        """`PATCH /api/employees/{id}`: переименование карточки."""
+        if self._static:
+            raise FixtureNotObjectError("фикстура не JSON-объект")
+        name = _employee_name(payload)
+        with self._lock:
+            employee = self._employee_index.get(employee_id)
+            if employee is None:
+                raise NotFoundError(employee_id)
+            employee["name"] = name
+            response = dict(employee)
+        return response, "employee_updated"
+
+    def delete_employee(self, employee_id):
+        """`DELETE /api/employees/{id}`: запись исчезает из `state.employees`."""
+        if self._static:
+            raise FixtureNotObjectError("фикстура не JSON-объект")
+        with self._lock:
+            employee = self._employee_index.pop(employee_id, None)
+            if employee is None:
+                raise NotFoundError(employee_id)
+            self._employees.remove(employee)
+        return {"deleted": employee_id}, "employee_deleted"
+
     def _subtree_ids_locked(self, task_id):
         """Все потомки задачи (по parent_id) на любой глубине, включая её саму."""
         subtree = {task_id}
@@ -646,12 +1033,23 @@ def match_route(path):
         return "state", {}
     if path == TASKS_PATH:
         return "tasks", {}
+    if path == EMPLOYEES_PATH:
+        return "employees", {}
     toggle = TOGGLE_PATH_RE.match(path)
     if toggle:
         return "toggle", {"task_id": unquote(toggle.group("task_id"))}
+    upload = ATTACH_UPLOAD_PATH_RE.match(path)
+    if upload:
+        return "attachment_upload", {"task_id": unquote(upload.group("task_id"))}
+    attachment = ATTACHMENT_PATH_RE.match(path)
+    if attachment:
+        return "attachment", {"attachment_id": unquote(attachment.group("attachment_id"))}
     task = TASK_PATH_RE.match(path)
     if task:
         return "task", {"task_id": unquote(task.group("task_id"))}
+    employee = EMPLOYEE_PATH_RE.match(path)
+    if employee:
+        return "employee", {"employee_id": unquote(employee.group("employee_id"))}
     return None
 
 
@@ -690,7 +1088,7 @@ class MockStateHandler(BaseHTTPRequestHandler):
         self.send_response(HTTPStatus.NO_CONTENT)
         self.send_header(*CORS_HEADER)
         self.send_header(
-            "Access-Control-Allow-Methods", "GET, HEAD, POST, DELETE, OPTIONS"
+            "Access-Control-Allow-Methods", "GET, HEAD, POST, PATCH, DELETE, OPTIONS"
         )
         self.send_header(
             "Access-Control-Allow-Headers",
@@ -710,13 +1108,13 @@ class MockStateHandler(BaseHTTPRequestHandler):
     # --- основная логика -------------------------------------------------
 
     def _dispatch(self, method, with_body):
-        path = self.path.split("?", 1)[0]
+        path, _, query = self.path.partition("?")
         route = match_route(path)
 
         # Тело читаем до любого ответа: иначе при отказе (401/403/404) без
         # вычитывания тела «поедет» keep-alive-соединение.
         try:
-            body = self._read_body()
+            body = self._read_body(self._body_limit())
         except PayloadTooLargeError:
             self._send_error(
                 HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
@@ -756,8 +1154,24 @@ class MockStateHandler(BaseHTTPRequestHandler):
             )
             return
 
-        # 1. Авторизация. Только заголовок `Token`; `X-Token` игнорируется,
-        #    как и на настоящем сервере (ТЗ §4).
+        # 1. Авторизация. Обычно только заголовок `Token`; `X-Token` игнорируется,
+        #    как и на настоящем сервере (ТЗ §4). Исключение — скачивание
+        #    вложения: там токен ТОЛЬКО query-параметром `?token=…`, заголовок
+        #    `Token` на этом пути не читается (ТЗ §4).
+        if route_name == "attachment" and method == "GET":
+            if not self._query_token_matches(query):
+                self._send_error(
+                    HTTPStatus.UNAUTHORIZED,
+                    "unauthorized",
+                    with_body=with_body,
+                    token_state="invalid",
+                )
+                return
+            # Привязку устройства не расходуем: картинки грузятся без
+            # X-Device-Id и без заголовка Token.
+            self._handle_attachment_get(params["attachment_id"], with_body)
+            return
+
         token_state = "ok" if self._token_matches() else "invalid"
         if token_state != "ok":
             self._send_error(
@@ -783,8 +1197,19 @@ class MockStateHandler(BaseHTTPRequestHandler):
             self._handle_upsert(body, with_body)
         elif route_name == "toggle":
             self._handle_toggle(params["task_id"], body, with_body)
-        else:
+        elif route_name == "task":
             self._handle_delete(params["task_id"], with_body)
+        elif route_name == "attachment_upload":
+            self._handle_attachment_upload(params["task_id"], body, with_body)
+        elif route_name == "attachment":
+            self._handle_attachment_delete(params["attachment_id"], with_body)
+        elif route_name == "employees":
+            self._handle_employees_create(body, with_body)
+        elif route_name == "employee":
+            if method == "PATCH":
+                self._handle_employee_update(params["employee_id"], body, with_body)
+            else:
+                self._handle_employee_delete(params["employee_id"], with_body)
 
     # --- обработчики маршрутов ------------------------------------------
 
@@ -889,6 +1314,109 @@ class MockStateHandler(BaseHTTPRequestHandler):
         self._save_state_out()
         self._send_json(HTTPStatus.OK, response, with_body=with_body, result=summary)
 
+    def _handle_attachment_upload(self, task_id, body, with_body):
+        try:
+            uploaded = parse_multipart_file(self.headers.get("Content-Type"), body)
+            if len(uploaded.data) > MAX_ATTACHMENT_BYTES:
+                raise PayloadTooLargeError(
+                    "файл больше {0} байт".format(MAX_ATTACHMENT_BYTES)
+                )
+            response, result = self.server.store.add_attachment(
+                task_id, uploaded.orig_name, uploaded.mime, uploaded.data
+            )
+        except (BadRequestError, NotFoundError, PayloadTooLargeError, FixtureNotObjectError) as exc:
+            self._send_store_error(exc, with_body)
+            return
+        self._save_state_out()
+        self._send_json(HTTPStatus.OK, response, with_body=with_body, result=result)
+
+    def _handle_attachment_get(self, attachment_id, with_body):
+        try:
+            attachment, data = self.server.store.attachment_blob(attachment_id)
+        except NotFoundError:
+            self._send_error(
+                HTTPStatus.NOT_FOUND,
+                "not_found",
+                with_body=with_body,
+                token_state="ok",
+                result="attachment_missing",
+            )
+            return
+        self._send_attachment(attachment, data, with_body=with_body)
+
+    def _handle_attachment_delete(self, attachment_id, with_body):
+        try:
+            response, result = self.server.store.delete_attachment(attachment_id)
+        except (NotFoundError, FixtureNotObjectError) as exc:
+            self._send_store_error(exc, with_body)
+            return
+        self._save_state_out()
+        self._send_json(HTTPStatus.OK, response, with_body=with_body, result=result)
+
+    def _handle_employees_create(self, body, with_body):
+        try:
+            payload = parse_json_body(body)
+            response, result = self.server.store.create_employee(payload)
+        except (BadRequestError, NotFoundError, FixtureNotObjectError) as exc:
+            self._send_store_error(exc, with_body)
+            return
+        self._save_state_out()
+        self._send_json(HTTPStatus.OK, response, with_body=with_body, result=result)
+
+    def _handle_employee_update(self, employee_id, body, with_body):
+        try:
+            payload = parse_json_body(body)
+            response, result = self.server.store.update_employee(employee_id, payload)
+        except (BadRequestError, NotFoundError, FixtureNotObjectError) as exc:
+            self._send_store_error(exc, with_body)
+            return
+        self._save_state_out()
+        self._send_json(HTTPStatus.OK, response, with_body=with_body, result=result)
+
+    def _handle_employee_delete(self, employee_id, with_body):
+        try:
+            response, result = self.server.store.delete_employee(employee_id)
+        except (BadRequestError, NotFoundError, FixtureNotObjectError) as exc:
+            self._send_store_error(exc, with_body)
+            return
+        self._save_state_out()
+        self._send_json(HTTPStatus.OK, response, with_body=with_body, result=result)
+
+    def _send_store_error(self, exc, with_body):
+        """Общие отказы новых мутаций: 400/404/413/500 в формате контракта."""
+        if isinstance(exc, BadRequestError):
+            self._send_error(
+                HTTPStatus.BAD_REQUEST,
+                "bad_request",
+                with_body=with_body,
+                token_state="ok",
+                result="bad_request",
+            )
+        elif isinstance(exc, NotFoundError):
+            self._send_error(
+                HTTPStatus.NOT_FOUND,
+                "not_found",
+                with_body=with_body,
+                token_state="ok",
+                result="not_found",
+            )
+        elif isinstance(exc, PayloadTooLargeError):
+            self._send_error(
+                HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
+                "payload_too_large",
+                with_body=with_body,
+                token_state="ok",
+                result="attachment_too_large",
+            )
+        else:
+            self._send_error(
+                HTTPStatus.INTERNAL_SERVER_ERROR,
+                "fixture_not_object",
+                with_body=with_body,
+                token_state="ok",
+                result="fixture_not_object",
+            )
+
     def _save_state_out(self):
         """Пишет `--state-out` после мутации; ошибка файла не ломает ответ клиенту."""
         path = self.server.state_out
@@ -906,12 +1434,50 @@ class MockStateHandler(BaseHTTPRequestHandler):
 
     # --- проверки запроса ------------------------------------------------
 
-    def _read_body(self):
+    def _body_limit(self):
+        """
+        Потолок тела для текущего пути.
+
+        Для аплоада 8 МиБ относится к самому файлу, поэтому multipart-обвязке
+        (заголовки частей и boundary) разрешён небольшой запас.
+        """
+        route = match_route(self.path.partition("?")[0])
+        if route is not None and route[0] == "attachment_upload":
+            return MAX_ATTACHMENT_BYTES + MULTIPART_OVERHEAD_BYTES
+        return MAX_BODY_BYTES
+
+    def handle_expect_100(self):
+        """
+        `Expect: 100-continue` — так curl шлёт крупные тела.
+
+        Если тела заведомо больше потолка, отвечаем 413 сразу, не дожидаясь
+        его отправки. Иначе клиент получает промежуточный `100 Continue`, всё
+        равно отправляет мегабайты, и в `-w %{http_code}` у curl видно `100`,
+        а не финальный `413`.
+        """
+        raw_length = self.headers.get("Content-Length")
+        try:
+            length = int(raw_length) if raw_length else 0
+        except ValueError:
+            length = 0
+        if length > self._body_limit():
+            self.close_connection = True
+            self._send_error(
+                HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
+                "payload_too_large",
+                with_body=True,
+                token_state="n/a",
+                result="body_too_large",
+            )
+            return False
+        return super().handle_expect_100()
+
+    def _read_body(self, limit=MAX_BODY_BYTES):
         """
         Читает тело по `Content-Length`; без заголовка — пустое тело.
 
         Chunked-тела не поддерживаются: Retrofit/OkHttp и curl по умолчанию
-        присылают Content-Length. Тело больше MAX_BODY_BYTES не вычитываем —
+        присылают Content-Length. Тело больше `limit` не вычитываем —
         соединение всё равно закрываем.
         """
         raw_length = self.headers.get("Content-Length")
@@ -925,9 +1491,9 @@ class MockStateHandler(BaseHTTPRequestHandler):
         if length < 0:
             self.close_connection = True
             raise BadRequestError("отрицательный Content-Length")
-        if length > MAX_BODY_BYTES:
+        if length > limit:
             self.close_connection = True
-            raise PayloadTooLargeError("тело больше {0} байт".format(MAX_BODY_BYTES))
+            raise PayloadTooLargeError("тело больше {0} байт".format(limit))
         if length == 0:
             return b""
         data = self.rfile.read(length)
@@ -948,6 +1514,19 @@ class MockStateHandler(BaseHTTPRequestHandler):
         if not provided:
             return False
         return provided.strip() == self.server.token
+
+    def _query_token_matches(self, query):
+        """
+        Проверяет токен из query-строки для `GET /api/attachments/{id}`.
+
+        ТЗ §4: этот путь принимает токен только `?token=…`; заголовок `Token`
+        здесь намеренно не читается, иначе клиент прошёл бы проверку не тем
+        способом, чем нужно приложению.
+        """
+        if not query:
+            return False
+        values = parse_qs(query, keep_blank_values=True).get("token") or []
+        return any(value.strip() == self.server.token for value in values)
 
     def _if_none_match_matches(self, etag):
         """Разбирает `If-None-Match`: список значений, `W/`-префикс и `*`."""
@@ -1033,6 +1612,33 @@ class MockStateHandler(BaseHTTPRequestHandler):
             result="not_modified",
         )
 
+    def _send_attachment(self, attachment, data, with_body=True):
+        """
+        Отдаёт байты вложения (200): `Content-Type` из записи, `inline` и имя файла.
+
+        gzip не применяем: это файл, а не JSON, и клиенту нужны ровно те байты,
+        что были загружены. Значение `Content-Type` санируется: http.server
+        кодирует заголовки в latin-1, кириллица там упала бы.
+        """
+        mime = _clean_header(attachment.get("mime")) or "application/octet-stream"
+        disposition = content_disposition_inline(attachment.get("orig_name"))
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", mime)
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Content-Disposition", disposition)
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header(*CORS_HEADER)
+        self.end_headers()
+        sent = self._write(data) if with_body else 0
+        self._log(
+            HTTPStatus.OK,
+            is_304=False,
+            token_state="ok",
+            gzip_enabled=False,
+            sent=sent,
+            result="attachment_get",
+        )
+
     def _send_error(self, status, code, with_body, token_state, allow=None, extra=None, result=""):
         # json.dumps с разделителями по умолчанию даёт ровно {"error": "..."}.
         document = {"error": code}
@@ -1074,13 +1680,27 @@ class MockStateHandler(BaseHTTPRequestHandler):
 
     # --- журнал ----------------------------------------------------------
 
+    def _loggable_path(self):
+        """
+        Путь для журнала: значение query-параметра `token` маскируется.
+
+        Иначе `GET /api/attachments/{id}?token=…` напечатал бы токен в журнал,
+        а значение токена не печатается никогда.
+        """
+        path, separator, query = self.path.partition("?")
+        if not separator:
+            return self.path
+        masked = re.sub(r"(?i)(^|&)(token=)[^&]*", r"\1\2***", query)
+        return "{0}?{1}".format(path, masked)
+
     def _log(self, status, is_304, token_state, gzip_enabled, sent, result=""):
         """
         Одна строка на запрос в stdout: метод, путь, код, признак 304,
         сколько «ожиданий» устройства осталось, состояние токена и результат
         мутации (created/updated/conflict/deleted/…).
 
-        Значение токена не печатается никогда — только ok/invalid.
+        Значение токена не печатается никогда — только ok/invalid, а query
+        `?token=` в пути маскируется.
         """
         device = "present" if self.headers.get(HEADER_DEVICE_ID) else "absent"
         tail = " result={0}".format(result) if result else ""
@@ -1089,7 +1709,7 @@ class MockStateHandler(BaseHTTPRequestHandler):
             "device_id={device} device_wait_left={waits} gzip={gzip} bytes_sent={sent}{tail}".format(
                 stamp=time.strftime("%Y-%m-%d %H:%M:%S"),
                 method=self.command,
-                path=self.path,
+                path=self._loggable_path(),
                 status=int(status),
                 is304="yes" if is_304 else "no",
                 token=token_state,
@@ -1215,6 +1835,11 @@ def print_banner(server):
         )
     )
     print("  мутации     : POST {0} | POST {0}/{{id}}/toggle | DELETE {0}/{{id}}".format(TASKS_PATH))
+    print(
+        "  вложения    : POST /api/tasks/{id}/attachments (multipart, поле file)"
+        " | GET /api/attachments/{id}?token=… | DELETE /api/attachments/{id}"
+    )
+    print("  сотрудники  : POST /api/employees | PATCH/DELETE /api/employees/{id}")
     print("  авторизация : заголовок Token (X-Token не принимается), значение не печатаем")
     if server.device_gate.limit:
         print(

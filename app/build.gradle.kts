@@ -128,6 +128,10 @@ dependencies {
     // Markdown: разбор — библиотека (Apache-2.0), отрисовка — Compose M3 (см. PHASE-REPORT §5)
     implementation(libs.markdown.parser)
 
+    // Вложения: превью картинок через Coil (ТЗ §5.1), сеть — наш OkHttp-стек
+    implementation(libs.coil.compose)
+    implementation(libs.coil.network.okhttp)
+
     testImplementation(libs.junit)
     testImplementation(libs.truth)
     testImplementation(libs.kotlinx.coroutines.test)

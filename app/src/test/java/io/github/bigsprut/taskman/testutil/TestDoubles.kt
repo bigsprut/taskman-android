@@ -1,9 +1,17 @@
 package io.github.bigsprut.taskman.testutil
 
+import io.github.bigsprut.taskman.data.attachments.AttachmentStore
+import io.github.bigsprut.taskman.data.attachments.LocalFile
+import io.github.bigsprut.taskman.data.attachments.LocalFileSource
 import io.github.bigsprut.taskman.data.local.entity.TaskEntity
 import io.github.bigsprut.taskman.data.remote.TaskmanApi
 import io.github.bigsprut.taskman.data.remote.dto.AttachmentDto
+import io.github.bigsprut.taskman.data.remote.dto.AttachmentUploadResponse
+import io.github.bigsprut.taskman.data.remote.dto.DeleteAttachmentResponse
+import io.github.bigsprut.taskman.data.remote.dto.DeleteEmployeeResponse
 import io.github.bigsprut.taskman.data.remote.dto.DeleteTaskResponse
+import io.github.bigsprut.taskman.data.remote.dto.EmployeeInDto
+import io.github.bigsprut.taskman.data.remote.dto.EmployeeResponse
 import io.github.bigsprut.taskman.data.remote.dto.SavedTaskDto
 import io.github.bigsprut.taskman.data.remote.dto.ServerSettingsDto
 import io.github.bigsprut.taskman.data.remote.dto.StateResponse
@@ -15,6 +23,7 @@ import io.github.bigsprut.taskman.data.repo.StateSnapshot
 import io.github.bigsprut.taskman.data.repo.StateStore
 import io.github.bigsprut.taskman.data.repo.TaskDraftSnapshot
 import io.github.bigsprut.taskman.data.repo.TaskSnapshotReader
+import io.github.bigsprut.taskman.domain.Attachment
 import io.github.bigsprut.taskman.domain.Category
 import io.github.bigsprut.taskman.domain.Employee
 import io.github.bigsprut.taskman.domain.Tag
@@ -24,16 +33,19 @@ import io.github.bigsprut.taskman.domain.TaskStatus
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MultipartBody
 import okhttp3.ResponseBody
 import okhttp3.ResponseBody.Companion.toResponseBody
+import okio.Buffer
 import retrofit2.Response
 
 /**
  * Подставной API: ответы задаются лямбдами, число вызовов считается по методам, последние
  * отправленные данные остаются для проверок.
  *
- * Три метода контракта (ТЗ §6) разделены намеренно: тест мутации не должен зависеть от того,
- * как настроен ответ `/api/state`, и наоборот.
+ * Ответы разделены по методам намеренно: тест мутации не должен зависеть от того, как
+ * настроен ответ `/api/state`, и наоборот. С Ф3 здесь же живут аплоад/удаление вложений
+ * и CRUD сотрудников — с теми же правилами.
  */
 class FakeTaskmanApi : TaskmanApi {
 
@@ -72,6 +84,93 @@ class FakeTaskmanApi : TaskmanApi {
     /** id последнего DELETE: `null`, если DELETE ещё не вызывали. */
     var lastDeletedId: String? = null
 
+    /** Ответ `POST /api/tasks/{id}/attachments`; по умолчанию — успех с данными последней части. */
+    var uploadOutcome: () -> Response<AttachmentUploadResponse> = {
+        successResponse(
+            AttachmentUploadResponse(
+                id = NEW_ATTACHMENT_ID,
+                name = lastUploadedFileName.orEmpty(),
+                size = lastUploadedBytes?.size?.toLong() ?: 0L,
+            ),
+        )
+    }
+
+    /** Сколько раз вызывали аплоад вложения. */
+    var uploadCalls: Int = 0
+
+    /** id задачи последнего аплоада. */
+    var lastUploadedTaskId: String? = null
+
+    /** Имя поля multipart: контракт требует ровно `file` (ТЗ §4). */
+    var lastUploadedFieldName: String? = null
+
+    /** Имя файла из `Content-Disposition` последней части. */
+    var lastUploadedFileName: String? = null
+
+    /** Содержимое последней части — проверка, что на сервер ушли именно байты выбранного файла. */
+    var lastUploadedBytes: ByteArray? = null
+
+    /** Ответ `DELETE /api/attachments/{id}`; по умолчанию — удаление последнего id. */
+    var deleteAttachmentOutcome: () -> Response<DeleteAttachmentResponse> = {
+        successResponse(DeleteAttachmentResponse(deleted = lastDeletedAttachmentId.orEmpty()))
+    }
+
+    /** Сколько раз удаляли вложения. */
+    var deleteAttachmentCalls: Int = 0
+
+    /** id последнего удалённого вложения. */
+    var lastDeletedAttachmentId: String? = null
+
+    /** Ответ `POST /api/employees`; по умолчанию — сервер выдал id и сохранил присланное имя. */
+    var createEmployeeOutcome: () -> Response<EmployeeResponse> = {
+        successResponse(
+            EmployeeResponse(
+                id = NEW_EMPLOYEE_ID,
+                name = lastCreatedEmployeeBody?.name.orEmpty(),
+            ),
+        )
+    }
+
+    /** Сколько раз создавали сотрудника. */
+    var createEmployeeCalls: Int = 0
+
+    /** Тело последнего `POST /api/employees`. */
+    var lastCreatedEmployeeBody: EmployeeInDto? = null
+
+    /** Ответ `PATCH /api/employees/{id}`; по умолчанию — успех с переименованным сотрудником. */
+    var updateEmployeeOutcome: () -> Response<EmployeeResponse> = {
+        successResponse(
+            EmployeeResponse(
+                id = lastUpdatedEmployeeId.orEmpty(),
+                name = lastUpdatedEmployeeBody?.name.orEmpty(),
+            ),
+        )
+    }
+
+    /** Сколько раз переименовывали сотрудника. */
+    var updateEmployeeCalls: Int = 0
+
+    /** id последнего `PATCH /api/employees/{id}`. */
+    var lastUpdatedEmployeeId: String? = null
+
+    /** Тело последнего `PATCH /api/employees/{id}`. */
+    var lastUpdatedEmployeeBody: EmployeeInDto? = null
+
+    /** Тело последнего запроса по сотруднику — без разницы, создание это или переименование. */
+    val lastEmployeeBody: EmployeeInDto?
+        get() = lastUpdatedEmployeeBody ?: lastCreatedEmployeeBody
+
+    /** Ответ `DELETE /api/employees/{id}`; по умолчанию — удаление последнего id. */
+    var deleteEmployeeOutcome: () -> Response<DeleteEmployeeResponse> = {
+        successResponse(DeleteEmployeeResponse(deleted = lastDeletedEmployeeId.orEmpty()))
+    }
+
+    /** Сколько раз удаляли сотрудника. */
+    var deleteEmployeeCalls: Int = 0
+
+    /** id последнего удалённого сотрудника. */
+    var lastDeletedEmployeeId: String? = null
+
     override suspend fun getState(): Response<StateResponse> {
         calls += 1
         return outcome()
@@ -88,6 +187,55 @@ class FakeTaskmanApi : TaskmanApi {
         lastDeletedId = id
         return deleteOutcome()
     }
+
+    override suspend fun uploadAttachment(
+        taskId: String,
+        file: MultipartBody.Part,
+    ): Response<AttachmentUploadResponse> {
+        uploadCalls += 1
+        lastUploadedTaskId = taskId
+        // Имя поля и имя файла живут в заголовке части — разбираем его, а не догадываемся
+        // по телу: контракт (§4) проверяется именно по тому, что уйдёт по проводу.
+        val disposition = file.headers?.get(HEADER_CONTENT_DISPOSITION)
+        lastUploadedFieldName = disposition
+            ?.let { MULTIPART_FIELD_NAME.find(it) }
+            ?.groupValues
+            ?.getOrNull(1)
+        lastUploadedFileName = disposition
+            ?.let { MULTIPART_FILE_NAME.find(it) }
+            ?.groupValues
+            ?.getOrNull(1)
+        lastUploadedBytes = Buffer().also { file.body.writeTo(it) }.readByteArray()
+        return uploadOutcome()
+    }
+
+    override suspend fun deleteAttachment(id: String): Response<DeleteAttachmentResponse> {
+        deleteAttachmentCalls += 1
+        lastDeletedAttachmentId = id
+        return deleteAttachmentOutcome()
+    }
+
+    override suspend fun createEmployee(body: EmployeeInDto): Response<EmployeeResponse> {
+        createEmployeeCalls += 1
+        lastCreatedEmployeeBody = body
+        return createEmployeeOutcome()
+    }
+
+    override suspend fun updateEmployee(
+        id: String,
+        body: EmployeeInDto,
+    ): Response<EmployeeResponse> {
+        updateEmployeeCalls += 1
+        lastUpdatedEmployeeId = id
+        lastUpdatedEmployeeBody = body
+        return updateEmployeeOutcome()
+    }
+
+    override suspend fun deleteEmployee(id: String): Response<DeleteEmployeeResponse> {
+        deleteEmployeeCalls += 1
+        lastDeletedEmployeeId = id
+        return deleteEmployeeOutcome()
+    }
 }
 
 /**
@@ -102,8 +250,12 @@ class FakeTaskmanApi : TaskmanApi {
  *
  * Редактору (Ф2) нужны ещё справочник сотрудников ([employeesFlow]) и история статусов
  * задачи ([historyByTask]): оба отдаются потоками, как и в Room-реализации.
+ *
+ * С Ф3 объект годится и как [AttachmentStore]: вложения лежат по задачам ([attachmentsByTask]),
+ * а [attachmentsFlow] — их объединение, чтобы тесту было видно всё, что положено.
  */
-class FakeStateStore(initialTasks: List<Task> = emptyList()) : StateStore, TaskSnapshotReader {
+class FakeStateStore(initialTasks: List<Task> = emptyList()) :
+    StateStore, TaskSnapshotReader, AttachmentStore {
 
     var stored: StateSnapshot? = null
     var clearCalls: Int = 0
@@ -114,6 +266,16 @@ class FakeStateStore(initialTasks: List<Task> = emptyList()) : StateStore, TaskS
 
     /** Справочник сотрудников для поля «сотрудник» в редакторе (§5.3-Ф2). */
     val employeesFlow = MutableStateFlow<List<Employee>>(emptyList())
+
+    /**
+     * Вложения по задачам. Поток создаётся лениво: подписка на вложения ещё не созданной
+     * задачи (UI может прийти раньше снапшота) должна дать пустой список, а не упасть, —
+     * как и `observeAttachments` у Room.
+     */
+    val attachmentsByTask = mutableMapOf<String, MutableStateFlow<List<Attachment>>>()
+
+    /** Все вложения одним списком — для проверок, где разбиение по задачам не важно. */
+    val attachmentsFlow = MutableStateFlow<List<Attachment>>(emptyList())
 
     /**
      * История статусов по задачам. Поток создаётся лениво: подписка на историю неизвестной
@@ -148,6 +310,13 @@ class FakeStateStore(initialTasks: List<Task> = emptyList()) : StateStore, TaskS
     override fun observeTaskHistory(taskId: String): Flow<List<TaskHistoryEntry>> =
         historyByTask.getOrPut(taskId) { MutableStateFlow(emptyList()) }
 
+    override fun observeAttachments(taskId: String): Flow<List<Attachment>> =
+        attachmentsByTask.getOrPut(taskId) { MutableStateFlow(emptyList()) }
+
+    override suspend fun findAttachment(attachmentId: String): Attachment? =
+        (attachmentsFlow.value + attachmentsByTask.values.flatMap { it.value })
+            .firstOrNull { it.id == attachmentId }
+
     /**
      * Полная запись задачи для редактора: сущность из [entities] и её теги.
      *
@@ -166,6 +335,8 @@ class FakeStateStore(initialTasks: List<Task> = emptyList()) : StateStore, TaskS
         tagsFlow.value = emptyList()
         categoriesFlow.value = emptyList()
         employeesFlow.value = emptyList()
+        attachmentsByTask.clear()
+        attachmentsFlow.value = emptyList()
         entities.clear()
         tagsByTask.clear()
         historyByTask.clear()
@@ -185,6 +356,31 @@ class FakeStateStore(initialTasks: List<Task> = emptyList()) : StateStore, TaskS
     fun putHistory(taskId: String, entries: List<TaskHistoryEntry>) {
         historyByTask.getOrPut(taskId) { MutableStateFlow(emptyList()) }.value = entries
     }
+
+    /**
+     * Кладёт вложения задачи. [attachmentsFlow] хранит объединение по всем задачам, поэтому
+     * подписка на задачу и поиск по id видят один и тот же набор.
+     */
+    fun putAttachments(taskId: String, attachments: List<Attachment>) {
+        attachmentsByTask.getOrPut(taskId) { MutableStateFlow(emptyList()) }.value = attachments
+        attachmentsFlow.value = attachmentsByTask.values.flatMap { it.value }
+    }
+}
+
+/** Подставной источник локальных файлов: отдаёт [file] (`null` — файл не выбран/не читается). */
+class FakeLocalFileSource(var file: LocalFile? = null) : LocalFileSource {
+
+    /** Сколько раз просили прочитать файл. */
+    var readCalls: Int = 0
+
+    /** uri последнего запроса на чтение. */
+    var lastUri: String? = null
+
+    override suspend fun read(uri: String): LocalFile? {
+        readCalls += 1
+        lastUri = uri
+        return file
+    }
 }
 
 /** Успешный ответ `GET /api/state`. */
@@ -197,6 +393,22 @@ fun successResponse(response: UpsertTasksResponse): Response<UpsertTasksResponse
 
 /** Успешный ответ `DELETE /api/tasks/{id}`. */
 fun successResponse(response: DeleteTaskResponse): Response<DeleteTaskResponse> =
+    Response.success(response)
+
+/** Успешный ответ `POST /api/tasks/{id}/attachments`. */
+fun successResponse(response: AttachmentUploadResponse): Response<AttachmentUploadResponse> =
+    Response.success(response)
+
+/** Успешный ответ `DELETE /api/attachments/{id}`. */
+fun successResponse(response: DeleteAttachmentResponse): Response<DeleteAttachmentResponse> =
+    Response.success(response)
+
+/** Успешный ответ `POST|PATCH /api/employees`. */
+fun successResponse(response: EmployeeResponse): Response<EmployeeResponse> =
+    Response.success(response)
+
+/** Успешный ответ `DELETE /api/employees/{id}`. */
+fun successResponse(response: DeleteEmployeeResponse): Response<DeleteEmployeeResponse> =
     Response.success(response)
 
 /** Неуспешный ответ с JSON-телом ошибки. */
@@ -315,6 +527,27 @@ fun task(
 )
 
 /**
+ * Доменное вложение: метаданные файла на сервере (сам файл клиент не кэширует).
+ *
+ * Ссылка на файл собирается из id (`AttachmentUrls`), поэтому в тестах достаточно id и имени.
+ */
+fun attachment(
+    id: String = "attachment-1",
+    taskId: String = "task-1",
+    origName: String = "file.txt",
+    mime: String? = null,
+    size: Long = 0,
+    createdAt: Double = 0.0,
+): Attachment = Attachment(
+    id = id,
+    taskId = taskId,
+    origName = origName,
+    mime = mime,
+    size = size,
+    createdAt = createdAt,
+)
+
+/**
  * Полная локальная сущность задачи: из неё собирается payload мутации (§4) и проверяется
  * «все поля на месте». Значения по умолчанию непустые там, где это важно для CAS.
  */
@@ -347,3 +580,17 @@ fun taskEntity(
     statusDateTs = statusDateTs,
     deleted = deleted,
 )
+
+/** id, который подставной сервер выдаёт новому вложению. */
+private const val NEW_ATTACHMENT_ID = "attachment-new"
+
+/** id, который подставной сервер выдаёт новому сотруднику. */
+private const val NEW_EMPLOYEE_ID = "employee-new"
+
+private const val HEADER_CONTENT_DISPOSITION = "Content-Disposition"
+
+/** Имя поля multipart в `Content-Disposition`: контракт требует ровно `file` (ТЗ §4). */
+private val MULTIPART_FIELD_NAME = Regex("name=\"([^\"]*)\"")
+
+/** Имя файла в `Content-Disposition`. */
+private val MULTIPART_FILE_NAME = Regex("filename=\"([^\"]*)\"")

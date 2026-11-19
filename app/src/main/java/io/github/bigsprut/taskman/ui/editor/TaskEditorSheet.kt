@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.lazy.LazyColumn
@@ -23,6 +24,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
@@ -52,10 +54,20 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import coil3.compose.AsyncImage
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -87,6 +99,7 @@ fun TaskEditorSheet(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     if (!state.isOpen) return
+    val attachments by viewModel.attachments.collectAsStateWithLifecycle()
 
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val draft = state.draft
@@ -205,6 +218,39 @@ fun TaskEditorSheet(
                         createdAt = draft.createdAt,
                         onCreatedAtChange = viewModel::setCreatedAt,
                     )
+                }
+
+                item("attachments-header") {
+                    HorizontalDivider()
+                    Text(
+                        text = stringResource(R.string.editor_attachments),
+                        style = MaterialTheme.typography.titleSmall,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                }
+
+                if (attachments.isEmpty()) {
+                    item("attachments-empty") {
+                        Text(
+                            text = stringResource(R.string.editor_attachment_empty),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+
+                items(attachments, key = { attachment -> "att-`${attachment.id}" }) { attachment ->
+                    AttachmentRow(
+                        attachment = attachment,
+                        previewUrl = viewModel.attachmentUrl(attachment.id),
+                        onOpen = { viewModel.downloadAttachment(attachment, AttachmentAction.OPEN) },
+                        onShare = { viewModel.downloadAttachment(attachment, AttachmentAction.SHARE) },
+                        onDelete = { viewModel.deleteAttachment(attachment.id) },
+                    )
+                }
+
+                item("attachments-add") {
+                    AttachmentsAddRow(onPick = viewModel::uploadAttachment)
                 }
 
                 item("subtasks-header") {
@@ -606,6 +652,115 @@ private fun formatDate(unixSeconds: Double): String = DateTimeFormatter
 
 private const val MILLIS_PER_SECOND = 1_000L
 private const val EDITOR_HEIGHT_FRACTION = 0.92f
+/** Строка вложения: превью картинки (Coil по ссылке с токеном), имя и действия. */
+@Composable
+private fun AttachmentRow(
+    attachment: io.github.bigsprut.taskman.domain.Attachment,
+    previewUrl: String?,
+    onOpen: () -> Unit,
+    onShare: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    val openLabel = stringResource(R.string.editor_attachment_open)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onOpen)
+            .semantics { contentDescription = openLabel }
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        if (attachment.isImage && previewUrl != null) {
+            AsyncImage(
+                model = previewUrl,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(MaterialTheme.shapes.small),
+            )
+        } else {
+            Icon(
+                painter = painterResource(R.drawable.ic_attachment),
+                contentDescription = null,
+                modifier = Modifier.size(24.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = attachment.origName,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = formatFileSize(attachment.size),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
+        IconButton(onClick = onShare) {
+            Icon(
+                imageVector = Icons.Filled.Share,
+                contentDescription = stringResource(R.string.editor_attachment_share),
+                modifier = Modifier.size(20.dp),
+            )
+        }
+        IconButton(onClick = onDelete) {
+            Icon(
+                imageVector = Icons.Filled.Delete,
+                contentDescription = stringResource(R.string.editor_attachment_delete),
+                modifier = Modifier.size(20.dp),
+            )
+        }
+    }
+}
+
+/** Кнопки добавления вложения: photo picker и выбор файла (§5.3-Ф3). */
+@Composable
+private fun AttachmentsAddRow(onPick: (String) -> Unit) {
+    val photoPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia(),
+    ) { uri ->
+        if (uri != null) onPick(uri.toString())
+    }
+    val filePicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri != null) onPick(uri.toString())
+    }
+
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedButton(
+            onClick = {
+                photoPicker.launch(
+                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                )
+            },
+        ) {
+            Text(stringResource(R.string.editor_attachment_add_photo))
+        }
+        OutlinedButton(onClick = { filePicker.launch(arrayOf("*/*")) }) {
+            Text(stringResource(R.string.editor_attachment_add_file))
+        }
+    }
+}
+
+/** Размер файла для строки вложения. */
+internal fun formatFileSize(bytes: Long): String {
+    if (bytes < KIB) return "$bytes Б"
+    val kib = bytes / KIB.toDouble()
+    if (kib < KIB) return String.format(Locale.getDefault(), "%.1f КБ", kib)
+    val mib = kib / KIB
+    return String.format(Locale.getDefault(), "%.1f МБ", mib)
+}
+
+private const val KIB = 1024L
+
 /** Стабильные теги для UI-теста регресса (§9-Ф2). */
 object EditorTestTags {
     const val TITLE = "editor-title"

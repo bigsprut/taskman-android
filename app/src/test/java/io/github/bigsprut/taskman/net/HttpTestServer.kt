@@ -24,6 +24,11 @@ class RecordedRequest(
     val method: String,
     val path: String,
     rawHeaders: Map<String, String>,
+    /**
+     * Тело запроса как строка UTF-8. Нужно для проверки контракта мутаций: сервер обязан
+     * получить полный JSON задачи (§4), а не заголовок с id. Для GET тело пустое.
+     */
+    val body: String = "",
 ) {
 
     val headers: Map<String, String> = TreeMap<String, String>(String.CASE_INSENSITIVE_ORDER).apply {
@@ -45,7 +50,7 @@ private class QueuedResponse(
  *
  * Сервер поднимается на loopback и эфемерном порту (0), поэтому тесты не занимают
  * фиксированный порт и не ходят в интернет. На все пути зарегистрирован один обработчик:
- * он запоминает запрос (метод, путь, заголовки), а ответ берёт из очереди [respond] /
+ * он запоминает запрос (метод, путь, заголовки, тело), а ответ берёт из очереди [respond] /
  * [gzipResponse] — что именно ответить, решает тест.
  *
  * Закрывать обязательно (в тестах — `use`), иначе поток сервера останется жить.
@@ -121,6 +126,8 @@ class HttpTestServer : Closeable {
 
     private fun handle(exchange: HttpExchange) {
         try {
+            // Тело читаем до ответа: так его видит тест целиком, независимо от метода.
+            val body = exchange.requestBody.use { it.readBytes().toString(Charsets.UTF_8) }
             recorded.add(
                 RecordedRequest(
                     method = exchange.requestMethod,
@@ -128,6 +135,7 @@ class HttpTestServer : Closeable {
                     rawHeaders = exchange.requestHeaders.entries.associate { (name, values) ->
                         name to values.joinToString(separator = ", ")
                     },
+                    body = body,
                 ),
             )
             // Очередь пуста — отвечаем явной ошибкой, чтобы тест упал, а не завис на таймауте.

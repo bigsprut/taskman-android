@@ -1,13 +1,21 @@
 package io.github.bigsprut.taskman.testutil
 
+import io.github.bigsprut.taskman.data.local.entity.TaskEntity
 import io.github.bigsprut.taskman.data.remote.TaskmanApi
 import io.github.bigsprut.taskman.data.remote.dto.AttachmentDto
+import io.github.bigsprut.taskman.data.remote.dto.DeleteTaskResponse
+import io.github.bigsprut.taskman.data.remote.dto.SavedTaskDto
 import io.github.bigsprut.taskman.data.remote.dto.ServerSettingsDto
 import io.github.bigsprut.taskman.data.remote.dto.StateResponse
 import io.github.bigsprut.taskman.data.remote.dto.StatusHistoryDto
 import io.github.bigsprut.taskman.data.remote.dto.TaskDto
+import io.github.bigsprut.taskman.data.remote.dto.TaskInDto
+import io.github.bigsprut.taskman.data.remote.dto.UpsertTasksResponse
 import io.github.bigsprut.taskman.data.repo.StateSnapshot
 import io.github.bigsprut.taskman.data.repo.StateStore
+import io.github.bigsprut.taskman.data.repo.TaskSnapshotReader
+import io.github.bigsprut.taskman.domain.Category
+import io.github.bigsprut.taskman.domain.Tag
 import io.github.bigsprut.taskman.domain.Task
 import io.github.bigsprut.taskman.domain.TaskStatus
 import kotlinx.coroutines.flow.Flow
@@ -18,30 +26,91 @@ import okhttp3.ResponseBody.Companion.toResponseBody
 import retrofit2.Response
 
 /**
- * Подставной API: ответ задаётся лямбдой [outcome], число вызовов считается в [calls].
+ * Подставной API: ответы задаются лямбдами, число вызовов считается по методам, последние
+ * отправленные данные остаются для проверок.
+ *
+ * Три метода контракта (ТЗ §6) разделены намеренно: тест мутации не должен зависеть от того,
+ * как настроен ответ `/api/state`, и наоборот.
  */
 class FakeTaskmanApi : TaskmanApi {
 
+    /** Ответ `GET /api/state`. */
     var outcome: () -> Response<StateResponse> = { successResponse(stateResponse()) }
+
+    /** Сколько раз запрашивали снапшот (в тестах мутаций — сколько раз был `refresh()`). */
     var calls: Int = 0
+
+    /** Ответ `POST /api/tasks`; по умолчанию считаем, что всё отправленное сохранено. */
+    var upsertOutcome: () -> Response<UpsertTasksResponse> = {
+        successResponse(
+            UpsertTasksResponse(
+                saved = lastUpserted.orEmpty().map { task ->
+                    SavedTaskDto(id = task.id.orEmpty(), updatedAt = task.updatedAt)
+                },
+                serverTime = DEFAULT_SERVER_TIME,
+            ),
+        )
+    }
+
+    /** Сколько раз вызывали UPSERT. */
+    var upsertCalls: Int = 0
+
+    /** Тело последнего UPSERT: `null`, если UPSERT ещё не вызывали. */
+    var lastUpserted: List<TaskInDto>? = null
+
+    /** Ответ `DELETE /api/tasks/{id}`; по умолчанию — успешное удаление последнего id. */
+    var deleteOutcome: () -> Response<DeleteTaskResponse> = {
+        successResponse(DeleteTaskResponse(deleted = lastDeletedId.orEmpty()))
+    }
+
+    /** Сколько раз вызывали DELETE. */
+    var deleteCalls: Int = 0
+
+    /** id последнего DELETE: `null`, если DELETE ещё не вызывали. */
+    var lastDeletedId: String? = null
 
     override suspend fun getState(): Response<StateResponse> {
         calls += 1
         return outcome()
     }
+
+    override suspend fun upsertTasks(tasks: List<TaskInDto>): Response<UpsertTasksResponse> {
+        upsertCalls += 1
+        lastUpserted = tasks
+        return upsertOutcome()
+    }
+
+    override suspend fun deleteTask(id: String): Response<DeleteTaskResponse> {
+        deleteCalls += 1
+        lastDeletedId = id
+        return deleteOutcome()
+    }
 }
 
 /**
- * Подставное хранилище: запоминает снапшоты, а задачи для UI отдаёт из [tasksFlow].
+ * Подставное хранилище: запоминает снапшоты, а задачи/теги/категории для UI отдаёт из
+ * [tasksFlow], [tagsFlow], [categoriesFlow].
  *
- * Порядок задач не сортируется специально: сортировка — обязанность репозитория.
+ * Дополнительно реализует [TaskSnapshotReader] — так тесты мутаций работают с тем же объектом,
+ * что и репозиторий. Порядок задач не сортируется специально: сортировка — обязанность
+ * репозитория. Локальные сущности для мутаций ([entities], [tagsByTask]) заполняются явно
+ * через [putTask], а не из [replaceSnapshot]: так тест видит ровно тот снапшот, который сам
+ * подготовил (маппинг ответа сервера покрыт `StateMapperTest`).
  */
-class FakeStateStore(initialTasks: List<Task> = emptyList()) : StateStore {
+class FakeStateStore(initialTasks: List<Task> = emptyList()) : StateStore, TaskSnapshotReader {
 
     var stored: StateSnapshot? = null
     var clearCalls: Int = 0
     val snapshots = mutableListOf<StateSnapshot>()
     val tasksFlow = MutableStateFlow(initialTasks)
+    val tagsFlow = MutableStateFlow<List<Tag>>(emptyList())
+    val categoriesFlow = MutableStateFlow<List<Category>>(emptyList())
+
+    /** Локальный снапшот для мутаций: полные сущности задач по id. */
+    val entities = mutableMapOf<String, TaskEntity>()
+
+    /** Локальный снапшот для мутаций: теги задачи по её id. */
+    val tagsByTask = mutableMapOf<String, List<String>>()
 
     /** Исключение, которое бросить при записи снапшота (эмуляция сбоя локального хранилища). */
     var failOnReplace: Throwable? = null
@@ -54,10 +123,28 @@ class FakeStateStore(initialTasks: List<Task> = emptyList()) : StateStore {
 
     override fun observeTasks(): Flow<List<Task>> = tasksFlow
 
+    override fun observeTags(): Flow<List<Tag>> = tagsFlow
+
+    override fun observeCategories(): Flow<List<Category>> = categoriesFlow
+
     override suspend fun clear() {
         clearCalls += 1
         stored = null
         tasksFlow.value = emptyList()
+        tagsFlow.value = emptyList()
+        categoriesFlow.value = emptyList()
+        entities.clear()
+        tagsByTask.clear()
+    }
+
+    override suspend fun taskEntity(id: String): TaskEntity? = entities[id]
+
+    override suspend fun tagIds(taskId: String): List<String> = tagsByTask[taskId].orEmpty()
+
+    /** Кладёт задачу во «внутренний» снапшот вместе с её тегами — источник для мутаций. */
+    fun putTask(entity: TaskEntity, tagIds: List<String> = emptyList()) {
+        entities[entity.id] = entity
+        tagsByTask[entity.id] = tagIds
     }
 }
 
@@ -65,9 +152,21 @@ class FakeStateStore(initialTasks: List<Task> = emptyList()) : StateStore {
 fun successResponse(response: StateResponse): Response<StateResponse> =
     Response.success(response)
 
+/** Успешный ответ `POST /api/tasks`. */
+fun successResponse(response: UpsertTasksResponse): Response<UpsertTasksResponse> =
+    Response.success(response)
+
+/** Успешный ответ `DELETE /api/tasks/{id}`. */
+fun successResponse(response: DeleteTaskResponse): Response<DeleteTaskResponse> =
+    Response.success(response)
+
 /** Неуспешный ответ с JSON-телом ошибки. */
 fun errorResponse(code: Int, json: String = """{"error":"device"}"""): Response<StateResponse> =
     Response.error<StateResponse>(code, jsonBody(json))
+
+/** Неуспешный ответ произвольного типа: мутации отвечают своими DTO, а ошибка у них общая. */
+fun <T> errorResponseOf(code: Int, json: String = """{"error":"device"}"""): Response<T> =
+    Response.error<T>(code, jsonBody(json))
 
 /** Тело ответа с JSON-типом. */
 fun jsonBody(json: String): ResponseBody = json.toResponseBody("application/json".toMediaType())
@@ -149,19 +248,63 @@ fun stateResponse(
 /** Фиксированное «серверное время» тестов. */
 const val DEFAULT_SERVER_TIME: Double = 1_765_843_200.0
 
-/** Доменная задача с минимальным набором значимых полей. */
+/**
+ * Доменная задача с минимальным набором значимых полей.
+ *
+ * Категория и теги нужны фильтрам Ф1, счётчик вложений — бейджу строки списка.
+ */
 fun task(
     id: String,
     status: TaskStatus,
     statusDateTs: Double = 0.0,
     parentId: String? = null,
+    categoryId: String? = null,
+    tagIds: List<String> = emptyList(),
+    attachmentCount: Int = 0,
 ): Task = Task(
     id = id,
     title = "Задача $id",
     status = status,
     statusDateTs = statusDateTs,
     parentId = parentId,
+    categoryId = categoryId,
     categoryTitle = null,
     categoryColor = null,
     source = null,
+    tagIds = tagIds,
+    attachmentCount = attachmentCount,
+)
+
+/**
+ * Полная локальная сущность задачи: из неё собирается payload мутации (§4) и проверяется
+ * «все поля на месте». Значения по умолчанию непустые там, где это важно для CAS.
+ */
+fun taskEntity(
+    id: String = "task-1",
+    listId: String = "list-1",
+    parentId: String? = null,
+    categoryId: String? = null,
+    title: String = "Задача",
+    content: String = "",
+    status: String = "created",
+    source: String? = null,
+    createdAt: Double? = 100.0,
+    updatedAt: Double? = 200.0,
+    completedAt: Double? = null,
+    statusDateTs: Double = 200.0,
+    deleted: Boolean = false,
+): TaskEntity = TaskEntity(
+    id = id,
+    listId = listId,
+    parentId = parentId,
+    categoryId = categoryId,
+    title = title,
+    content = content,
+    status = status,
+    source = source,
+    createdAt = createdAt,
+    updatedAt = updatedAt,
+    completedAt = completedAt,
+    statusDateTs = statusDateTs,
+    deleted = deleted,
 )

@@ -25,6 +25,10 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface StateDao {
 
+    /**
+     * Задачи для списка: категория и число неудалённых вложений подтягиваются в том же
+     * запросе, чтобы строка не делала N+1 обращений к базе.
+     */
     @Query(
         """
         SELECT
@@ -33,9 +37,14 @@ interface StateDao {
             t.status AS status,
             t.statusDateTs AS statusDateTs,
             t.parentId AS parentId,
+            t.categoryId AS categoryId,
             t.source AS source,
             c.title AS categoryTitle,
-            c.color AS categoryColor
+            c.color AS categoryColor,
+            (
+                SELECT COUNT(*) FROM attachments AS a
+                WHERE a.taskId = t.id AND a.deleted = 0
+            ) AS attachmentCount
         FROM tasks AS t
         LEFT JOIN categories AS c ON c.id = t.categoryId
         WHERE t.deleted = 0
@@ -43,14 +52,29 @@ interface StateDao {
     )
     fun observeTasks(): Flow<List<TaskWithCategory>>
 
+    /** Связи «задача ↔ тег» — второй поток, склеивается с задачами в [DatabaseStateStore]. */
+    @Query("SELECT * FROM task_tags")
+    fun observeTaskTags(): Flow<List<TaskTagEntity>>
+
     @Query("SELECT COUNT(*) FROM tasks WHERE deleted = 0")
     suspend fun countVisibleTasks(): Int
 
     @Query("SELECT * FROM tasks WHERE id = :id")
     suspend fun findTask(id: String): TaskEntity?
 
+    @Query("SELECT tagId FROM task_tags WHERE taskId = :taskId")
+    suspend fun tagsOf(taskId: String): List<String>
+
     @Query("SELECT * FROM tasks WHERE parentId = :parentId AND deleted = 0")
     suspend fun childrenOf(parentId: String): List<TaskEntity>
+
+    /** Каталог тегов для чипов фильтра — отдельным потоком, с инвалидацией при замене снапшота. */
+    @Query("SELECT * FROM tags ORDER BY position")
+    fun observeTagCatalog(): Flow<List<TagEntity>>
+
+    /** Каталог категорий для чипов фильтра. */
+    @Query("SELECT * FROM categories ORDER BY position")
+    fun observeCategoryCatalog(): Flow<List<CategoryEntity>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertTasks(tasks: List<TaskEntity>)

@@ -9,11 +9,14 @@ import io.github.bigsprut.taskman.data.repo.StateSnapshot
 import io.github.bigsprut.taskman.data.repo.StateStore
 import io.github.bigsprut.taskman.data.repo.SyncOutcome
 import io.github.bigsprut.taskman.data.repo.TaskRepository
+import io.github.bigsprut.taskman.domain.Category
+import io.github.bigsprut.taskman.domain.Tag
 import io.github.bigsprut.taskman.domain.Task
 import java.io.File
 import java.nio.file.Files
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.runBlocking
 import org.junit.Test
 
@@ -221,6 +224,11 @@ private class FakeStateStore : StateStore {
     }
 
     override fun observeTasks(): Flow<List<Task>> = tasks
+
+    // Каталоги фильтров этим тестам не нужны: сетевой слой их не читает.
+    override fun observeTags(): Flow<List<Tag>> = emptyFlow()
+
+    override fun observeCategories(): Flow<List<Category>> = emptyFlow()
 
     override suspend fun clear() {
         snapshot = null

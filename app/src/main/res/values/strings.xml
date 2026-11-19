@@ -40,11 +40,12 @@
 
     <!-- Список задач -->
     <string name="list_title">Задачи</string>
+    <string name="list_filtered_empty_title">Под фильтр ничего не подошло</string>
+    <string name="list_filtered_empty_body">Измените фильтры или сбросьте их — задачи в списке есть.</string>
     <string name="list_empty_title">Задач пока нет</string>
     <string name="list_empty_body">На сервере нет ни одной задачи. Потяните список вниз, чтобы обновить.</string>
     <string name="list_error_title">Не удалось загрузить задачи</string>
     <string name="list_cached_warning">Показаны сохранённые данные — обновить не удалось</string>
-    <string name="list_subtask_prefix">⤷ </string>
 
     <!-- Статусы -->
     <string name="status_created">Создана</string>
@@ -71,4 +72,36 @@
     <string name="error_http">Сервер ответил ошибкой %1$d</string>
     <string name="error_data">Сервер вернул данные в неизвестном формате</string>
     <string name="error_internal">Внутренняя ошибка приложения — попробуйте ещё раз</string>
+
+    <!-- Фильтры (Ф1): у каждой группы чипов обязательна читаемая подпись (§5.3) -->
+    <string name="filter_status_label">Статус</string>
+    <string name="filter_categories_label">Категории</string>
+    <string name="filter_tags_label">Теги</string>
+    <string name="filter_active">Активные</string>
+    <string name="filter_completed">Выполнены</string>
+    <string name="filter_canceled">Отменены</string>
+    <string name="filter_all">Все</string>
+    <string name="filter_chip_with_count">%1$s · %2$d</string>
+    <string name="filter_reset">Сбросить фильтры</string>
+
+    <!-- Подзадачи и чекбокс -->
+    <string name="group_progress">▸ %1$d/%2$d</string>
+    <string name="cd_expand_group">Показать подзадачи</string>
+    <string name="cd_collapse_group">Скрыть подзадачи</string>
+    <string name="cd_toggle_completed">Отметить выполненной</string>
+    <string name="cd_toggle_created">Вернуть в «Создана»</string>
+    <string name="badge_attachments">Вложений: %1$d</string>
+    <string name="badge_more_tags">+%1$d</string>
+
+    <!-- Смахивание-удаление (кнопок удаления в списке нет) -->
+    <string name="delete_dialog_title">Удалить задачу?</string>
+    <string name="delete_dialog_text">«%1$s» будет удалена вместе с подзадачами.</string>
+    <string name="delete_dialog_confirm">Удалить</string>
+    <string name="delete_dialog_cancel">Отмена</string>
+
+    <!-- Сообщения о мутациях -->
+    <string name="conflict_toggle">Задачу изменили на другом устройстве — данные обновлены</string>
+    <string name="conflict_delete">Задачу уже изменили на другом устройстве — список обновлён</string>
+    <string name="toggle_failed">Не удалось изменить статус задачи</string>
+    <string name="delete_failed">Не удалось удалить задачу</string>
 </resources>

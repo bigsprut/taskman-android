@@ -82,7 +82,8 @@ class SessionViewModel(
 
     init {
         restoreConnection()
-        observeSyncStatus()
+        observeAuthFailures()
+        observeDeviceApproval()
     }
 
     /**
@@ -186,16 +187,19 @@ class SessionViewModel(
         }
     }
 
-    private fun observeSyncStatus() {
+    /**
+     * Отказы авторизации приходят и из синхронизации, и из мутаций — реакция одна:
+     * 401 → вход, 403 `device` → ожидание подтверждения. 401 ловится и с экрана ожидания:
+     * автоповтор там идёт раз в 30 с, и отозванный токен не должен запирать пользователя.
+     */
+    private fun observeAuthFailures() {
         viewModelScope.launch {
-            taskRepository.syncStatus.collect { status ->
-                val failure = status.lastFailure
+            taskRepository.authFailures.collect { failure ->
                 val current = _state.value
                 when {
-                    // 401 может прийти и со списка, и с экрана ожидания устройства: автоповтор
-                    // там идёт раз в 30 с, и отозванный токен не должен запирать пользователя.
                     failure is ApiFailure.Unauthorized &&
-                        (current is SessionUiState.Ready || current is SessionUiState.DeviceApprovalPending) -> {
+                        (current is SessionUiState.Ready ||
+                            current is SessionUiState.DeviceApprovalPending) -> {
                         // Токен отозван или сервер сбросили: кэш не подтверждён — чистим.
                         runCatching { connections.forgetToken() }
                         runCatching { taskRepository.clearLocalData() }
@@ -207,12 +211,20 @@ class SessionViewModel(
                             deviceId = connections.currentDeviceId().orEmpty(),
                         )
                     }
+                }
+            }
+        }
+    }
 
-                    failure == null &&
-                        status.lastSuccessAtMillis != null &&
-                        current is SessionUiState.DeviceApprovalPending -> {
-                        _state.value = SessionUiState.Ready
-                    }
+    /** Устройство дождалось подтверждения: сервер ответил успехом — пускаем в список. */
+    private fun observeDeviceApproval() {
+        viewModelScope.launch {
+            taskRepository.syncStatus.collect { status ->
+                if (status.lastFailure == null &&
+                    status.lastSuccessAtMillis != null &&
+                    _state.value is SessionUiState.DeviceApprovalPending
+                ) {
+                    _state.value = SessionUiState.Ready
                 }
             }
         }

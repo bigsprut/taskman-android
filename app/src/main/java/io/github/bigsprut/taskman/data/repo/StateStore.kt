@@ -8,6 +8,8 @@ import io.github.bigsprut.taskman.data.local.entity.TaskEntity
 import io.github.bigsprut.taskman.data.local.entity.TaskListEntity
 import io.github.bigsprut.taskman.data.local.entity.TaskStatusHistoryEntity
 import io.github.bigsprut.taskman.data.local.entity.TaskTagEntity
+import io.github.bigsprut.taskman.domain.Category
+import io.github.bigsprut.taskman.domain.Tag
 import io.github.bigsprut.taskman.domain.Task
 import kotlinx.coroutines.flow.Flow
 
@@ -40,6 +42,12 @@ interface StateStore {
 
     /** Задачи для UI в произвольном порядке: сортировкой владеет домен. */
     fun observeTasks(): Flow<List<Task>>
+
+    /** Каталог тегов для чипов фильтра и бейджей. */
+    fun observeTags(): Flow<List<Tag>>
+
+    /** Каталог категорий для чипов фильтра. */
+    fun observeCategories(): Flow<List<Category>>
 
     /** Локальный кэш задач при выходе/смене сервера. */
     suspend fun clear()

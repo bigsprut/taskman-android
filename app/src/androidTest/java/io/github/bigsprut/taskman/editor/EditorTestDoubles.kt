@@ -2,14 +2,22 @@ package io.github.bigsprut.taskman.editor
 
 import io.github.bigsprut.taskman.data.local.entity.TaskEntity
 import io.github.bigsprut.taskman.data.attachments.AttachmentStore
+import io.github.bigsprut.taskman.data.export.ExportSnapshot
 import io.github.bigsprut.taskman.data.local.PendingMutationDao
 import io.github.bigsprut.taskman.data.local.entity.PendingMutationEntity
 import io.github.bigsprut.taskman.data.repo.LocalTaskWriter
 import io.github.bigsprut.taskman.data.repo.OfflineMutationQueue
 import io.github.bigsprut.taskman.data.attachments.LocalFile
+import io.github.bigsprut.taskman.data.attachments.LocalFileHandle
 import io.github.bigsprut.taskman.data.attachments.LocalFileSource
 import io.github.bigsprut.taskman.data.remote.TaskmanApi
 import io.github.bigsprut.taskman.data.remote.dto.AttachmentUploadResponse
+import io.github.bigsprut.taskman.data.remote.dto.CategoryInDto
+import io.github.bigsprut.taskman.data.remote.dto.CategoryResponse
+import io.github.bigsprut.taskman.data.remote.dto.DeleteCatalogResponse
+import io.github.bigsprut.taskman.data.remote.dto.SettingsResponse
+import io.github.bigsprut.taskman.data.remote.dto.TagInDto
+import io.github.bigsprut.taskman.data.remote.dto.TagResponse
 import io.github.bigsprut.taskman.data.remote.dto.DeleteAttachmentResponse
 import io.github.bigsprut.taskman.data.remote.dto.DeleteEmployeeResponse
 import io.github.bigsprut.taskman.data.remote.dto.DeleteTaskResponse
@@ -78,6 +86,32 @@ internal class FakeApi : TaskmanApi {
     override suspend fun deleteEmployee(id: String): Response<DeleteEmployeeResponse> =
         Response.success(DeleteEmployeeResponse(deleted = id))
 
+    override suspend fun createTag(body: TagInDto): Response<TagResponse> =
+        Response.success(TagResponse(id = "tag-1", title = body.title.orEmpty(), color = body.color))
+
+    override suspend fun updateTag(id: String, body: TagInDto): Response<TagResponse> =
+        Response.success(TagResponse(id = id, title = body.title.orEmpty(), color = body.color))
+
+    override suspend fun deleteTag(id: String): Response<DeleteCatalogResponse> =
+        Response.success(DeleteCatalogResponse(deleted = id))
+
+    override suspend fun createCategory(body: CategoryInDto): Response<CategoryResponse> =
+        Response.success(
+            CategoryResponse(id = "cat-1", title = body.title.orEmpty(), color = body.color),
+        )
+
+    override suspend fun updateCategory(
+        id: String,
+        body: CategoryInDto,
+    ): Response<CategoryResponse> =
+        Response.success(CategoryResponse(id = id, title = body.title.orEmpty(), color = body.color))
+
+    override suspend fun deleteCategory(id: String): Response<DeleteCatalogResponse> =
+        Response.success(DeleteCatalogResponse(deleted = id))
+
+    override suspend fun updateSettings(body: kotlinx.serialization.json.JsonObject): Response<SettingsResponse> =
+        Response.success(SettingsResponse(defaultCategory = null))
+
     companion object {
         const val SERVER_TIME = 1_765_843_200.0
     }
@@ -131,6 +165,10 @@ internal class FakeStore : StateStore, TaskSnapshotReader, AttachmentStore {
 
     override suspend fun findAttachment(attachmentId: String): Attachment? = null
 
+    override fun observeDefaultCategoryId(): Flow<String?> = MutableStateFlow(null)
+
+    override suspend fun loadExportSnapshot(): ExportSnapshot = ExportSnapshot()
+
     override suspend fun clear() {
         entities.clear()
         tasksFlow.value = emptyList()
@@ -142,7 +180,7 @@ internal class FakeStore : StateStore, TaskSnapshotReader, AttachmentStore {
 }
 /** Пустой источник файлов: в UI-тесте вложения не читаются. */
 internal class FakeLocalFileSource : LocalFileSource {
-    override suspend fun read(uri: String): LocalFile? = null
+    override suspend fun open(uri: String): LocalFileHandle? = null
 }
 /** Очередь мутаций в памяти для UI-теста (Ф4). */
 internal class FakePendingMutationDao : PendingMutationDao {

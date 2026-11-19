@@ -166,4 +166,28 @@
 
     <!-- Офлайн-очередь (Ф4) -->
     <string name="list_pending_banner">Не отправлено изменений: %1$d — отправим при появлении сети</string>
-    <string name="saved_locally">Сохранено локально — отправим при связи</string></resources>
+    <string name="saved_locally">Сохранено локально — отправим при связи</string>
+    <string name="list_pending_sync_now">Отправить сейчас</string>
+    <string name="sync_done">Изменения отправлены</string>    <!-- Справочники, сортировка и экспорт (Ф5) -->
+    <string name="settings_tags">Теги</string>
+    <string name="settings_categories">Категории</string>
+    <string name="settings_tag_add">Добавить тег</string>
+    <string name="settings_category_add">Добавить категорию</string>
+    <string name="settings_tag_edit">Изменить тег</string>
+    <string name="settings_category_edit">Изменить категорию</string>
+    <string name="settings_catalog_title">Название</string>
+    <string name="settings_catalog_color">Цвет</string>
+    <string name="settings_catalog_color_hint">Формат: #rrggbb</string>
+    <string name="settings_catalog_delete_title">Удалить из справочника?</string>
+    <string name="settings_catalog_delete_text">«%1$s» будет удалён. В задачах ссылка на него исчезнет после синхронизации.</string>
+    <string name="settings_default_category">Категория по умолчанию</string>
+    <string name="settings_default_category_none">Не задана</string>
+    <string name="settings_sort_order">Сортировка</string>
+    <string name="sort_status">По статусу</string>
+    <string name="sort_freshness">По дате статуса</string>
+    <string name="sort_title">По названию</string>
+    <string name="settings_export">Экспорт</string>
+    <string name="settings_export_hint">Соберёт все задачи в markdown и откроет системное «Поделиться».</string>
+    <string name="settings_export_action">Экспортировать в Markdown</string>
+    <string name="export_subject">Задачи</string>
+    <string name="export_failed">Не удалось открыть «Поделиться»</string></resources>

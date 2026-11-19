@@ -7,6 +7,7 @@ import io.github.bigsprut.taskman.data.remote.ConnectionHolder
 import io.github.bigsprut.taskman.data.remote.NetworkFactory
 import io.github.bigsprut.taskman.data.remote.TaskmanApi
 import io.github.bigsprut.taskman.data.repo.StateSnapshot
+import io.github.bigsprut.taskman.data.export.ExportSnapshot
 import io.github.bigsprut.taskman.data.repo.StateStore
 import io.github.bigsprut.taskman.data.repo.SyncOutcome
 import io.github.bigsprut.taskman.data.repo.TaskDraftSnapshot
@@ -250,6 +251,10 @@ private class FakeStateStore : StateStore, AttachmentStore {
 
     // Черновик редактора собирается репозиторием из этой же записи; сетевым тестам не нужен.
     override suspend fun loadTaskDraft(taskId: String): TaskDraftSnapshot? = null
+
+    override fun observeDefaultCategoryId(): Flow<String?> = emptyFlow()
+
+    override suspend fun loadExportSnapshot(): ExportSnapshot = ExportSnapshot()
 
     override suspend fun clear() {
         snapshot = null

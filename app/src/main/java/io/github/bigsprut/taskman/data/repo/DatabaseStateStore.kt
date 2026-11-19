@@ -2,6 +2,7 @@ package io.github.bigsprut.taskman.data.repo
 
 import androidx.room.withTransaction
 import io.github.bigsprut.taskman.data.local.TaskmanDatabase
+import io.github.bigsprut.taskman.data.export.ExportSnapshot
 import io.github.bigsprut.taskman.data.local.entity.AttachmentEntity
 import io.github.bigsprut.taskman.data.local.entity.CategoryEntity
 import io.github.bigsprut.taskman.data.local.entity.EmployeeEntity
@@ -111,6 +112,20 @@ class DatabaseStateStore(
         database.stateDao().observeAttachments(taskId).map { attachments ->
             attachments.map(AttachmentEntity::toDomain)
         }
+
+    override fun observeDefaultCategoryId(): Flow<String?> =
+        database.stateDao().observeSettings().map { settings -> settings?.defaultCategoryId }
+
+    override suspend fun loadExportSnapshot(): ExportSnapshot {
+        val dao = database.stateDao()
+        return ExportSnapshot(
+            tasks = dao.allTasksForExport(),
+            tags = dao.allTagsForExport(),
+            categories = dao.allCategoriesForExport(),
+            attachments = dao.allAttachmentsForExport(),
+            taskTags = dao.allTaskTags(),
+        )
+    }
 
     override suspend fun findAttachment(attachmentId: String): Attachment? =
         database.stateDao().findAttachment(attachmentId)?.toDomain()

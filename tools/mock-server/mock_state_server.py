@@ -5,7 +5,7 @@
 ЭТО НЕ СЕРВЕР ПРОДУКТА И НЕ ЭМУЛЯТОР БЭКЕНДА ЦЕЛИКОМ. Состояние читается из
 фикстуры `fixtures/api/state.sample.json` в память при старте и дальше меняется
 только мутациями клиента; после перезапуска всё возвращается к фикстуре.
-Поддерживается минимальный набор записи, который нужен клиенту Ф1–Ф3:
+Поддерживается минимальный набор записи, который нужен клиенту Ф1–Ф5:
 
   * `GET /api/state` — текущее состояние (soft-deleted задачи не попадают);
   * `POST /api/tasks` — UPSERT списка задач полным объектом с CAS по `updated_at`;
@@ -14,11 +14,15 @@
   * `POST /api/tasks/{id}/attachments` — multipart-аплоад (поле формы `file`);
   * `GET /api/attachments/{id}?token=…` — байты файла (токен ТОЛЬКО query);
   * `DELETE /api/attachments/{id}` — soft-delete вложения;
-  * `POST/PATCH/DELETE /api/employees[/{id}]` — справочник сотрудников.
+  * `POST/PATCH/DELETE /api/employees[/{id}]` — справочник сотрудников;
+  * `GET/POST/PATCH/DELETE /api/tags[/{id}]` — теги (удаление убирает ссылки);
+  * `GET/POST/PATCH/DELETE /api/categories[/{id}]` — категории (удаление обнуляет
+    `category_id` у задач);
+  * `PATCH /api/settings` — категория по умолчанию для новых задач.
 
-Теги, категории, списки, настройки и `/api/sync` только читаются из фикстуры и
-не меняются. Значения по умолчанию (адрес 127.0.0.1, порт 8443, токен) — только
-для локального стенда, в продукт их переносить нельзя.
+Списки и `/api/sync` только читаются из фикстуры и не меняются. Значения по
+умолчанию (адрес 127.0.0.1, порт 8443, токен) — только для локального стенда,
+в продукт их переносить нельзя.
 
 Реализация — только стандартная библиотека Python 3, pip-зависимостей нет.
 
@@ -39,6 +43,13 @@
     смене статуса или явном `status_date`;
   * флаг `--state-out PATH` — после каждой мутации кладёт текущее состояние
     в файл (смотреть глазами), по умолчанию не пишется;
+  * теги и категории: частичный `PATCH` (что не передано — не меняется), пустой
+    `title` после trim → 400, неизвестный id → 404; удаление тега убирает его
+    id из `tasks[].tags`, удаление категории обнуляет `tasks[].category_id`
+    (и `settings.default_category`, если категория была по умолчанию);
+  * `PATCH /api/settings` принимает `default_category` = id существующей
+    категории или `null`; неизвестный id → 404. Отсутствие поля — тоже `null`
+    (клиент с `explicitNulls = false` так снимает настройку);
   * multipart разбирается вручную по boundary: модуль `cgi` в Python 3.13
     удалён, сторонние библиотеки не используются. Файл хранится в памяти;
     потолок файла — 8 МиБ, больше — 413. Поле формы обязано называться `file`;
@@ -84,6 +95,9 @@ DEFAULT_TOKEN = "local-dev-token"
 STATE_PATH = "/api/state"
 TASKS_PATH = "/api/tasks"
 EMPLOYEES_PATH = "/api/employees"
+TAGS_PATH = "/api/tags"
+CATEGORIES_PATH = "/api/categories"
+SETTINGS_PATH = "/api/settings"
 #: `/api/tasks/{id}/toggle`; id декодируется из percent-encoding отдельно.
 TOGGLE_PATH_RE = re.compile(r"^/api/tasks/(?P<task_id>[^/]+)/toggle$")
 #: `/api/tasks/{id}/attachments` — multipart-аплоад (поле формы `file`).
@@ -94,6 +108,9 @@ TASK_PATH_RE = re.compile(r"^/api/tasks/(?P<task_id>[^/]+)$")
 ATTACHMENT_PATH_RE = re.compile(r"^/api/attachments/(?P<attachment_id>[^/]+)$")
 #: `/api/employees/{id}` — PATCH/DELETE карточки сотрудника.
 EMPLOYEE_PATH_RE = re.compile(r"^/api/employees/(?P<employee_id>[^/]+)$")
+#: `/api/tags/{id}` и `/api/categories/{id}` — карточка справочника.
+TAG_PATH_RE = re.compile(r"^/api/tags/(?P<tag_id>[^/]+)$")
+CATEGORY_PATH_RE = re.compile(r"^/api/categories/(?P<category_id>[^/]+)$")
 
 #: Маршрут -> разрешённые методы. OPTIONS разрешён на всех маршрутах.
 ROUTE_METHODS = {
@@ -105,6 +122,11 @@ ROUTE_METHODS = {
     "attachment": ("GET", "DELETE"),
     "employees": ("POST",),
     "employee": ("PATCH", "DELETE"),
+    "tags": ("GET", "HEAD", "POST"),
+    "tag": ("GET", "HEAD", "PATCH", "DELETE"),
+    "categories": ("GET", "HEAD", "POST"),
+    "category": ("GET", "HEAD", "PATCH", "DELETE"),
+    "settings": ("PATCH",),
 }
 
 #: Статусы задачи из контракта (ТЗ §4); `needsAction` — легаси-синоним `created`.
@@ -527,6 +549,46 @@ def _employee_name(payload):
     return name
 
 
+def _catalog_fields(payload, partial):
+    """
+    Тело тега/категории: `{title, color}` (создание) или `{title?, color?}` (PATCH).
+
+    `title` обрезается по краям, пустой после trim — 400. `color` сохраняется
+    ровно как прислали: нормализацию цвета (`#rrggbb`) делает клиент.
+
+    При partial=True отсутствующее поле и `null` значат «не менять»: клиент
+    сериализует null-поля как отсутствующие (`explicitNulls = false`).
+    Возвращает (title, color, менять ли title, менять ли color).
+    """
+    if not isinstance(payload, dict):
+        raise BadRequestError("тело должно быть JSON-объектом")
+    change_title = not partial
+    change_color = not partial
+    if partial:
+        change_title = payload.get("title") is not None
+        change_color = payload.get("color") is not None
+    title = None
+    color = None
+    if change_title:
+        title = _text(payload.get("title"), "title").strip()
+        if not title:
+            raise BadRequestError("title не может быть пустым")
+    if change_color:
+        color = _optional_text(payload.get("color"), "color")
+    return title, color, change_title, change_color
+
+
+def _next_position(records):
+    """position новой записи справочника: max + 1, то есть в конец списка."""
+    positions = [
+        record.get("position")
+        for record in records
+        if isinstance(record.get("position"), int)
+        and not isinstance(record.get("position"), bool)
+    ]
+    return (max(positions) if positions else 0) + 1
+
+
 # --- состояние в памяти ----------------------------------------------------
 
 
@@ -551,6 +613,13 @@ class StateStore:
         self._index = {}
         self._employees = []
         self._employee_index = {}
+        # Справочники и настройки — тоже память процесса (правятся Ф5-мутациями);
+        # пустые значения нужны и статической фикстуре: баннер спрашивает счётчики.
+        self._tags = []
+        self._tag_index = {}
+        self._categories = []
+        self._category_index = {}
+        self._settings = {}
         #: id вложения -> (задача, запись вложения в задаче).
         self._attachments = {}
         #: id вложения -> байты файла (только для загруженных на этот стенд).
@@ -576,6 +645,23 @@ class StateStore:
             for employee in self._employees
             if isinstance(employee, dict) and employee.get("id")
         }
+        # Справочники и настройки тоже живут в памяти: их правят Ф5-мутации.
+        self._tags = [
+            copy.deepcopy(tag)
+            for tag in doc.get("tags") or []
+            if isinstance(tag, dict) and tag.get("id")
+        ]
+        self._tag_index = {tag["id"]: tag for tag in self._tags}
+        self._categories = [
+            copy.deepcopy(category)
+            for category in doc.get("categories") or []
+            if isinstance(category, dict) and category.get("id")
+        ]
+        self._category_index = {
+            category["id"]: category for category in self._categories
+        }
+        settings = doc.get("settings")
+        self._settings = copy.deepcopy(settings) if isinstance(settings, dict) else {}
         for task in self._tasks:
             for attachment in task.get("attachments") or []:
                 if isinstance(attachment, dict) and attachment.get("id"):
@@ -591,6 +677,11 @@ class StateStore:
         """Сколько задач лежит в памяти, включая soft-deleted."""
         with self._lock:
             return len(self._tasks)
+
+    def total_catalogs(self):
+        """Сколько тегов и категорий лежит в памяти (для баннера при старте)."""
+        with self._lock:
+            return len(self._tags), len(self._categories)
 
     def current(self):
         """
@@ -629,12 +720,22 @@ class StateStore:
             elif key == "employees":
                 # Справочник сотрудников живёт в памяти: удалённые исчезают, новые появляются.
                 document["employees"] = [dict(employee) for employee in self._employees]
+            elif key == "tags":
+                # Теги и категории — из памяти: правки Ф5 видны в /api/state.
+                document["tags"] = [dict(tag) for tag in self._tags]
+            elif key == "categories":
+                document["categories"] = [dict(category) for category in self._categories]
+            elif key == "settings":
+                document["settings"] = dict(self._settings)
             elif key == "server_time":
                 document["server_time"] = now
             else:
                 document[key] = value
         document.setdefault("tasks", tasks)
         document.setdefault("employees", [dict(employee) for employee in self._employees])
+        document.setdefault("tags", [dict(tag) for tag in self._tags])
+        document.setdefault("categories", [dict(category) for category in self._categories])
+        document.setdefault("settings", dict(self._settings))
         document.setdefault("server_time", now)
         return document
 
@@ -914,6 +1015,180 @@ class StateStore:
             self._employees.remove(employee)
         return {"deleted": employee_id}, "employee_deleted"
 
+    # --- теги и категории -----------------------------------------------
+
+    @staticmethod
+    def _catalog_view(record):
+        """Ответ по тегу/категории: `{id, title, color}` (position — только в `/api/state`)."""
+        return {
+            "id": record.get("id", ""),
+            "title": record.get("title", ""),
+            "color": record.get("color"),
+        }
+
+    def list_tags(self):
+        """`GET /api/tags`: список тегов; порядок — как в `/api/state`."""
+        if self._static:
+            raise FixtureNotObjectError("фикстура не JSON-объект")
+        with self._lock:
+            return [self._catalog_view(tag) for tag in self._tags], "tags"
+
+    def get_tag(self, tag_id):
+        """`GET /api/tags/{id}`: запись или 404."""
+        if self._static:
+            raise FixtureNotObjectError("фикстура не JSON-объект")
+        with self._lock:
+            tag = self._tag_index.get(tag_id)
+            if tag is None:
+                raise NotFoundError(tag_id)
+            return self._catalog_view(tag), "tag_get"
+
+    def create_tag(self, payload):
+        """`POST /api/tags`: `{title, color}`; новый тег получает position в конце."""
+        if self._static:
+            raise FixtureNotObjectError("фикстура не JSON-объект")
+        title, color, _, _ = _catalog_fields(payload, partial=False)
+        with self._lock:
+            tag = {
+                "id": uuid.uuid4().hex,
+                "title": title,
+                "color": color,
+                "position": _next_position(self._tags),
+            }
+            self._tags.append(tag)
+            self._tag_index[tag["id"]] = tag
+            response = self._catalog_view(tag)
+        return response, "tag_created"
+
+    def update_tag(self, tag_id, payload):
+        """`PATCH /api/tags/{id}`: частичное обновление, что не передано — не меняется."""
+        if self._static:
+            raise FixtureNotObjectError("фикстура не JSON-объект")
+        title, color, change_title, change_color = _catalog_fields(payload, partial=True)
+        with self._lock:
+            tag = self._tag_index.get(tag_id)
+            if tag is None:
+                raise NotFoundError(tag_id)
+            if change_title:
+                tag["title"] = title
+            if change_color:
+                tag["color"] = color
+            response = self._catalog_view(tag)
+        return response, "tag_updated"
+
+    def delete_tag(self, tag_id):
+        """`DELETE /api/tags/{id}`: тег исчезает из state и из `tasks[].tags`."""
+        if self._static:
+            raise FixtureNotObjectError("фикстура не JSON-объект")
+        with self._lock:
+            tag = self._tag_index.pop(tag_id, None)
+            if tag is None:
+                raise NotFoundError(tag_id)
+            self._tags.remove(tag)
+            # Ссылки у задач убираем: удалённого тега в состоянии быть не должно.
+            for task in self._tasks:
+                references = task.get("tags") or []
+                if tag_id in references:
+                    task["tags"] = [ref for ref in references if ref != tag_id]
+            response = {"deleted": tag_id}
+        return response, "tag_deleted"
+
+    def list_categories(self):
+        """`GET /api/categories`: список категорий (сверх контракта, для удобства)."""
+        if self._static:
+            raise FixtureNotObjectError("фикстура не JSON-объект")
+        with self._lock:
+            return [self._catalog_view(category) for category in self._categories], "categories"
+
+    def get_category(self, category_id):
+        """`GET /api/categories/{id}`: запись или 404."""
+        if self._static:
+            raise FixtureNotObjectError("фикстура не JSON-объект")
+        with self._lock:
+            category = self._category_index.get(category_id)
+            if category is None:
+                raise NotFoundError(category_id)
+            return self._catalog_view(category), "category_get"
+
+    def create_category(self, payload):
+        """`POST /api/categories`: `{title, color}`; position — в конец списка."""
+        if self._static:
+            raise FixtureNotObjectError("фикстура не JSON-объект")
+        title, color, _, _ = _catalog_fields(payload, partial=False)
+        with self._lock:
+            category = {
+                "id": uuid.uuid4().hex,
+                "title": title,
+                "color": color,
+                "position": _next_position(self._categories),
+            }
+            self._categories.append(category)
+            self._category_index[category["id"]] = category
+            response = self._catalog_view(category)
+        return response, "category_created"
+
+    def update_category(self, category_id, payload):
+        """`PATCH /api/categories/{id}`: частичное обновление."""
+        if self._static:
+            raise FixtureNotObjectError("фикстура не JSON-объект")
+        title, color, change_title, change_color = _catalog_fields(payload, partial=True)
+        with self._lock:
+            category = self._category_index.get(category_id)
+            if category is None:
+                raise NotFoundError(category_id)
+            if change_title:
+                category["title"] = title
+            if change_color:
+                category["color"] = color
+            response = self._catalog_view(category)
+        return response, "category_updated"
+
+    def delete_category(self, category_id):
+        """`DELETE /api/categories/{id}`: у задач `category_id` → null."""
+        if self._static:
+            raise FixtureNotObjectError("фикстура не JSON-объект")
+        with self._lock:
+            category = self._category_index.pop(category_id, None)
+            if category is None:
+                raise NotFoundError(category_id)
+            self._categories.remove(category)
+            for task in self._tasks:
+                if task.get("category_id") == category_id:
+                    task["category_id"] = None
+            # Категория по умолчанию не должна ссылаться на удалённую запись.
+            if self._settings.get("default_category") == category_id:
+                self._settings["default_category"] = None
+            response = {"deleted": category_id}
+        return response, "category_deleted"
+
+    # --- настройки ------------------------------------------------------
+
+    def update_settings(self, payload):
+        """
+        `PATCH /api/settings`: `{default_category: id|null}` (ТЗ §6).
+
+        Отсутствующее поле — то же, что `null`: клиент с `explicitNulls = false`
+        не кодирует null и присылает `{}`, когда снимает категорию по умолчанию.
+        """
+        if self._static:
+            raise FixtureNotObjectError("фикстура не JSON-объект")
+        if not isinstance(payload, dict):
+            raise BadRequestError("тело должно быть JSON-объектом")
+        category_id = payload.get("default_category")
+        with self._lock:
+            if category_id is not None:
+                if not isinstance(category_id, str) or not category_id.strip():
+                    raise BadRequestError("default_category должен быть id или null")
+                category_id = category_id.strip()
+                if category_id not in self._category_index:
+                    raise NotFoundError(category_id)
+            self._settings["default_category"] = category_id
+            response = {
+                "default_category": category_id,
+                "server_time": time.time(),
+            }
+        return response, "settings_updated"
+
     def _subtree_ids_locked(self, task_id):
         """Все потомки задачи (по parent_id) на любой глубине, включая её саму."""
         subtree = {task_id}
@@ -935,10 +1210,9 @@ class StateStore:
         return ""
 
     def _default_category_id(self):
-        settings = self._fixture.doc.get("settings") or {}
-        if isinstance(settings, dict):
-            return settings.get("default_category")
-        return None
+        """Категория по умолчанию из памяти: её меняет `PATCH /api/settings`."""
+        with self._lock:
+            return self._settings.get("default_category")
 
     def write_state(self, path):
         """
@@ -1035,6 +1309,12 @@ def match_route(path):
         return "tasks", {}
     if path == EMPLOYEES_PATH:
         return "employees", {}
+    if path == TAGS_PATH:
+        return "tags", {}
+    if path == CATEGORIES_PATH:
+        return "categories", {}
+    if path == SETTINGS_PATH:
+        return "settings", {}
     toggle = TOGGLE_PATH_RE.match(path)
     if toggle:
         return "toggle", {"task_id": unquote(toggle.group("task_id"))}
@@ -1050,6 +1330,12 @@ def match_route(path):
     employee = EMPLOYEE_PATH_RE.match(path)
     if employee:
         return "employee", {"employee_id": unquote(employee.group("employee_id"))}
+    tag = TAG_PATH_RE.match(path)
+    if tag:
+        return "tag", {"tag_id": unquote(tag.group("tag_id"))}
+    category = CATEGORY_PATH_RE.match(path)
+    if category:
+        return "category", {"category_id": unquote(category.group("category_id"))}
     return None
 
 
@@ -1210,6 +1496,32 @@ class MockStateHandler(BaseHTTPRequestHandler):
                 self._handle_employee_update(params["employee_id"], body, with_body)
             else:
                 self._handle_employee_delete(params["employee_id"], with_body)
+        elif route_name == "tags":
+            if method == "POST":
+                self._handle_tag_create(body, with_body)
+            else:
+                self._handle_tags_list(with_body)
+        elif route_name == "tag":
+            if method in ("GET", "HEAD"):
+                self._handle_tag_get(params["tag_id"], with_body)
+            elif method == "PATCH":
+                self._handle_tag_update(params["tag_id"], body, with_body)
+            else:
+                self._handle_tag_delete(params["tag_id"], with_body)
+        elif route_name == "categories":
+            if method == "POST":
+                self._handle_category_create(body, with_body)
+            else:
+                self._handle_categories_list(with_body)
+        elif route_name == "category":
+            if method in ("GET", "HEAD"):
+                self._handle_category_get(params["category_id"], with_body)
+            elif method == "PATCH":
+                self._handle_category_update(params["category_id"], body, with_body)
+            else:
+                self._handle_category_delete(params["category_id"], with_body)
+        elif route_name == "settings":
+            self._handle_settings(body, with_body)
 
     # --- обработчики маршрутов ------------------------------------------
 
@@ -1376,6 +1688,106 @@ class MockStateHandler(BaseHTTPRequestHandler):
     def _handle_employee_delete(self, employee_id, with_body):
         try:
             response, result = self.server.store.delete_employee(employee_id)
+        except (BadRequestError, NotFoundError, FixtureNotObjectError) as exc:
+            self._send_store_error(exc, with_body)
+            return
+        self._save_state_out()
+        self._send_json(HTTPStatus.OK, response, with_body=with_body, result=result)
+
+    def _handle_tags_list(self, with_body):
+        try:
+            response, result = self.server.store.list_tags()
+        except FixtureNotObjectError as exc:
+            self._send_store_error(exc, with_body)
+            return
+        self._send_json(HTTPStatus.OK, response, with_body=with_body, result=result)
+
+    def _handle_tag_get(self, tag_id, with_body):
+        try:
+            response, result = self.server.store.get_tag(tag_id)
+        except (BadRequestError, NotFoundError, FixtureNotObjectError) as exc:
+            self._send_store_error(exc, with_body)
+            return
+        self._send_json(HTTPStatus.OK, response, with_body=with_body, result=result)
+
+    def _handle_tag_create(self, body, with_body):
+        try:
+            payload = parse_json_body(body)
+            response, result = self.server.store.create_tag(payload)
+        except (BadRequestError, NotFoundError, FixtureNotObjectError) as exc:
+            self._send_store_error(exc, with_body)
+            return
+        self._save_state_out()
+        self._send_json(HTTPStatus.OK, response, with_body=with_body, result=result)
+
+    def _handle_tag_update(self, tag_id, body, with_body):
+        try:
+            payload = parse_json_body(body)
+            response, result = self.server.store.update_tag(tag_id, payload)
+        except (BadRequestError, NotFoundError, FixtureNotObjectError) as exc:
+            self._send_store_error(exc, with_body)
+            return
+        self._save_state_out()
+        self._send_json(HTTPStatus.OK, response, with_body=with_body, result=result)
+
+    def _handle_tag_delete(self, tag_id, with_body):
+        try:
+            response, result = self.server.store.delete_tag(tag_id)
+        except (BadRequestError, NotFoundError, FixtureNotObjectError) as exc:
+            self._send_store_error(exc, with_body)
+            return
+        self._save_state_out()
+        self._send_json(HTTPStatus.OK, response, with_body=with_body, result=result)
+
+    def _handle_categories_list(self, with_body):
+        try:
+            response, result = self.server.store.list_categories()
+        except FixtureNotObjectError as exc:
+            self._send_store_error(exc, with_body)
+            return
+        self._send_json(HTTPStatus.OK, response, with_body=with_body, result=result)
+
+    def _handle_category_get(self, category_id, with_body):
+        try:
+            response, result = self.server.store.get_category(category_id)
+        except (BadRequestError, NotFoundError, FixtureNotObjectError) as exc:
+            self._send_store_error(exc, with_body)
+            return
+        self._send_json(HTTPStatus.OK, response, with_body=with_body, result=result)
+
+    def _handle_category_create(self, body, with_body):
+        try:
+            payload = parse_json_body(body)
+            response, result = self.server.store.create_category(payload)
+        except (BadRequestError, NotFoundError, FixtureNotObjectError) as exc:
+            self._send_store_error(exc, with_body)
+            return
+        self._save_state_out()
+        self._send_json(HTTPStatus.OK, response, with_body=with_body, result=result)
+
+    def _handle_category_update(self, category_id, body, with_body):
+        try:
+            payload = parse_json_body(body)
+            response, result = self.server.store.update_category(category_id, payload)
+        except (BadRequestError, NotFoundError, FixtureNotObjectError) as exc:
+            self._send_store_error(exc, with_body)
+            return
+        self._save_state_out()
+        self._send_json(HTTPStatus.OK, response, with_body=with_body, result=result)
+
+    def _handle_category_delete(self, category_id, with_body):
+        try:
+            response, result = self.server.store.delete_category(category_id)
+        except (BadRequestError, NotFoundError, FixtureNotObjectError) as exc:
+            self._send_store_error(exc, with_body)
+            return
+        self._save_state_out()
+        self._send_json(HTTPStatus.OK, response, with_body=with_body, result=result)
+
+    def _handle_settings(self, body, with_body):
+        try:
+            payload = parse_json_body(body)
+            response, result = self.server.store.update_settings(payload)
         except (BadRequestError, NotFoundError, FixtureNotObjectError) as exc:
             self._send_store_error(exc, with_body)
             return
@@ -1823,6 +2235,7 @@ def print_banner(server):
     fixture = server.store.fixture
     host, port = server.server_address[0], server.server_address[1]
     _, _, initial_etag = server.store.current()
+    tags_count, categories_count = server.store.total_catalogs()
     print("=" * 78)
     print("  taskman mock state server  |  ТОЛЬКО ДЛЯ ЛОКАЛЬНОЙ РАЗРАБОТКИ")
     print("  Это не сервер продукта: состояние в памяти, перезапуск возвращает фикстуру.")
@@ -1830,8 +2243,13 @@ def print_banner(server):
     print("  адрес       : http://{0}:{1}{2}".format(host, port, STATE_PATH))
     print("  фикстура    : {0}".format(fixture.path))
     print(
-        "  в ней       : задач {0}, {1} байт, начальный ETag {2}".format(
-            server.store.total_tasks(), len(fixture.raw), initial_etag
+        "  в ней       : задач {0}, тегов {1}, категорий {2}, {3} байт, "
+        "начальный ETag {4}".format(
+            server.store.total_tasks(),
+            tags_count,
+            categories_count,
+            len(fixture.raw),
+            initial_etag,
         )
     )
     print("  мутации     : POST {0} | POST {0}/{{id}}/toggle | DELETE {0}/{{id}}".format(TASKS_PATH))
@@ -1840,6 +2258,9 @@ def print_banner(server):
         " | GET /api/attachments/{id}?token=… | DELETE /api/attachments/{id}"
     )
     print("  сотрудники  : POST /api/employees | PATCH/DELETE /api/employees/{id}")
+    print("  теги        : GET/POST /api/tags | GET/PATCH/DELETE /api/tags/{id}")
+    print("  категории   : GET/POST /api/categories | GET/PATCH/DELETE /api/categories/{id}")
+    print("  настройки   : PATCH /api/settings (default_category: id или null)")
     print("  авторизация : заголовок Token (X-Token не принимается), значение не печатаем")
     if server.device_gate.limit:
         print(

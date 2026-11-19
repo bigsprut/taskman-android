@@ -16,7 +16,8 @@ import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
+import okio.BufferedSink
+import okio.source
 
 /** Итог операции с вложением. 409 у вложений не бывает, поэтому исходов меньше, чем у задач. */
 sealed interface AttachmentOutcome {
@@ -59,10 +60,15 @@ class AttachmentRepository(
     )
 
     suspend fun upload(taskId: String, uri: String): AttachmentOutcome {
-        val file = files.read(uri)
+        val file = files.open(uri)
             ?: return AttachmentOutcome.Failed(ApiFailure.FileAccess)
 
-        val requestBody = file.bytes.toRequestBody(file.mimeType?.toMediaTypeOrNull())
+        // Потоковое тело: файл пишется в сокет частями, память не зависит от размера (§Q16).
+        val requestBody = StreamRequestBody(
+            contentType = file.mimeType?.toMediaTypeOrNull(),
+            contentLength = file.size,
+            openStream = file.openStream,
+        )
         // Поле формы — именно `file` (ТЗ §4), иначе сервер не примет вложение.
         val part = MultipartBody.Part.createFormData("file", file.name, requestBody)
 
@@ -128,5 +134,25 @@ class AttachmentDownloader(
 
     private companion object {
         const val CACHE_SUBDIRECTORY = "attachments"
+    }
+}
+/**
+ * Тело запроса, которое читает файл потоком (ответ на Q16, техдолг Ф3/Ф4).
+ *
+ * `contentLength` может быть неизвестен (`-1`) — тогда OkHttp отправит `Transfer-Encoding:
+ * chunked`; это допустимо для multipart.
+ */
+private class StreamRequestBody(
+    private val contentType: okhttp3.MediaType?,
+    private val contentLength: Long?,
+    private val openStream: () -> java.io.InputStream,
+) : okhttp3.RequestBody() {
+
+    override fun contentType(): okhttp3.MediaType? = contentType
+
+    override fun contentLength(): Long = contentLength ?: -1L
+
+    override fun writeTo(sink: BufferedSink) {
+        openStream().use { input -> sink.writeAll(input.source()) }
     }
 }

@@ -60,6 +60,12 @@ interface StateStore {
     /** Справочник сотрудников — поле «сотрудник» в редакторе (§5.3-Ф2). */
     fun observeEmployees(): Flow<List<Employee>>
 
+    /** Категория по умолчанию из `/api/state.settings` (§5.3-Ф5). */
+    fun observeDefaultCategoryId(): Flow<String?>
+
+    /** Полный снапшот для экспорта в markdown (§5.3-Ф5). */
+    suspend fun loadExportSnapshot(): io.github.bigsprut.taskman.data.export.ExportSnapshot
+
     /** История статусов задачи для блока «История» в редакторе. */
     fun observeTaskHistory(taskId: String): Flow<List<TaskHistoryEntry>>
 

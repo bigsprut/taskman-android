@@ -1,12 +1,19 @@
 package io.github.bigsprut.taskman.data.remote
 
 import io.github.bigsprut.taskman.data.remote.dto.AttachmentUploadResponse
+import io.github.bigsprut.taskman.data.remote.dto.CategoryInDto
+import io.github.bigsprut.taskman.data.remote.dto.CategoryResponse
+import io.github.bigsprut.taskman.data.remote.dto.DeleteCatalogResponse
 import io.github.bigsprut.taskman.data.remote.dto.DeleteAttachmentResponse
 import io.github.bigsprut.taskman.data.remote.dto.DeleteEmployeeResponse
 import io.github.bigsprut.taskman.data.remote.dto.DeleteTaskResponse
 import io.github.bigsprut.taskman.data.remote.dto.EmployeeInDto
 import io.github.bigsprut.taskman.data.remote.dto.EmployeeResponse
+import kotlinx.serialization.json.JsonObject
+import io.github.bigsprut.taskman.data.remote.dto.SettingsResponse
 import io.github.bigsprut.taskman.data.remote.dto.StateResponse
+import io.github.bigsprut.taskman.data.remote.dto.TagInDto
+import io.github.bigsprut.taskman.data.remote.dto.TagResponse
 import io.github.bigsprut.taskman.data.remote.dto.TaskInDto
 import io.github.bigsprut.taskman.data.remote.dto.UpsertTasksResponse
 import okhttp3.MultipartBody
@@ -61,6 +68,39 @@ interface TaskmanApi {
     /** Удаление вложения; `GET` файла в этом клиенте идёт через query-токен (см. [AttachmentUrls]). */
     @DELETE("api/attachments/{id}")
     suspend fun deleteAttachment(@Path("id") id: String): Response<DeleteAttachmentResponse>
+
+    // --- Теги и категории (§6, §5.3-Ф5) ---
+
+    @POST("api/tags")
+    suspend fun createTag(@Body body: TagInDto): Response<TagResponse>
+
+    @PATCH("api/tags/{id}")
+    suspend fun updateTag(@Path("id") id: String, @Body body: TagInDto): Response<TagResponse>
+
+    @DELETE("api/tags/{id}")
+    suspend fun deleteTag(@Path("id") id: String): Response<DeleteCatalogResponse>
+
+    @POST("api/categories")
+    suspend fun createCategory(@Body body: CategoryInDto): Response<CategoryResponse>
+
+    @PATCH("api/categories/{id}")
+    suspend fun updateCategory(
+        @Path("id") id: String,
+        @Body body: CategoryInDto,
+    ): Response<CategoryResponse>
+
+    @DELETE("api/categories/{id}")
+    suspend fun deleteCategory(@Path("id") id: String): Response<DeleteCatalogResponse>
+
+    /**
+     * Категория по умолчанию для новых задач (§6: `PATCH /api/settings`).
+     *
+     * Тело — `JsonObject`, а не DTO: «снять категорию» означает `{"default_category": null}`,
+     * а kotlinx.serialization с `explicitNulls = false` выбросил бы это поле из DTO и отправил
+     * `{}` — сервер мог бы понять это как «не менять».
+     */
+    @PATCH("api/settings")
+    suspend fun updateSettings(@Body body: JsonObject): Response<SettingsResponse>
 
     // --- Справочник сотрудников (§6, §5.3-Ф3) ---
 

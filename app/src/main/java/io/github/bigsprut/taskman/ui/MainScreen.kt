@@ -33,6 +33,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.foundation.lazy.LazyColumn
@@ -55,6 +58,10 @@ import io.github.bigsprut.taskman.ui.list.TaskListContent
 import io.github.bigsprut.taskman.ui.list.TaskListViewModel
 import io.github.bigsprut.taskman.ui.session.SessionViewModel
 import io.github.bigsprut.taskman.ui.settings.SettingsContent
+import io.github.bigsprut.taskman.data.export.MarkdownExport
+import io.github.bigsprut.taskman.domain.TaskStatus
+import io.github.bigsprut.taskman.ui.common.ExportIntents
+import io.github.bigsprut.taskman.ui.common.labelRes
 import io.github.bigsprut.taskman.ui.settings.SettingsMessage
 import io.github.bigsprut.taskman.ui.settings.SettingsViewModel
 import kotlinx.coroutines.launch
@@ -102,6 +109,35 @@ fun MainScreen(
     val cachedDataWarning = stringResource(R.string.list_cached_warning)
     val copiedMessage = stringResource(R.string.settings_copied)
     val employees by settingsViewModel.employeeList.collectAsStateWithLifecycle()
+    val tagCatalog by settingsViewModel.tagList.collectAsStateWithLifecycle()
+    val categoryCatalog by settingsViewModel.categoryList.collectAsStateWithLifecycle()
+    val defaultCategoryId by settingsViewModel.defaultCategoryId.collectAsStateWithLifecycle()
+    val sortOrder by settingsViewModel.sortOrder.collectAsStateWithLifecycle()
+    val exportFailedText = stringResource(R.string.export_failed)
+    val exportSubject = stringResource(R.string.export_subject)
+    val dateFormatter = remember { SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault()) }
+    val statusLabels = TaskStatus.entries.associate { status ->
+        status.wireValue to stringResource(status.labelRes())
+    }
+    val exportNowLabel = dateFormatter.format(Date())
+    val onExport: () -> Unit = {
+        settingsViewModel.loadExportSnapshot { snapshot ->
+            val markdown = MarkdownExport.build(
+                snapshot = snapshot,
+                generatedAtLabel = exportNowLabel,
+                statusLabel = { wire -> statusLabels[wire] ?: wire },
+                formatDate = { seconds -> dateFormatter.format(Date((seconds * 1000).toLong())) },
+            )
+            val shared = ExportIntents.shareMarkdown(
+                context = context,
+                text = markdown,
+                subject = exportSubject,
+            )
+            if (!shared) {
+                scope.launch { snackbarHostState.showSnackbar(exportFailedText) }
+            }
+        }
+    }
     val employeeFailedText = stringResource(R.string.settings_employee_failed)
     val sharedFiles by taskListViewModel.sharedFiles.collectAsStateWithLifecycle()
     val shareDialogText = stringResource(R.string.share_pick_task_text, sharedFiles.size)
@@ -117,6 +153,7 @@ fun MainScreen(
     val shareFailedText = stringResource(R.string.share_attach_failed)
     val shareAttachedText = stringResource(R.string.share_attached)
     val savedLocallyText = stringResource(R.string.saved_locally)
+    val syncedText = stringResource(R.string.sync_done)
 
     // Если данные есть (из Room), ошибку синхронизации показываем снекбаром и не стираем
     // список с экрана: «нет сети» не означает «нет данных».
@@ -140,6 +177,7 @@ fun MainScreen(
                     "$shareFailedText: ${failureTexts.describe(message.failure)}"
                 ListMessage.SharedFilesAttached -> shareAttachedText
                 ListMessage.SavedLocally -> savedLocallyText
+                ListMessage.Synced -> syncedText
             }
             snackbarHostState.showSnackbar(text)
         }
@@ -183,7 +221,7 @@ fun MainScreen(
     LaunchedEffect(settingsViewModel) {
         settingsViewModel.messages.collect { message ->
             when (message) {
-                is SettingsMessage.EmployeeFailed -> snackbarHostState.showSnackbar(
+                is SettingsMessage.Failed -> snackbarHostState.showSnackbar(
                     "$employeeFailedText: ${failureTexts.describe(message.failure)}",
                 )
             }
@@ -252,6 +290,7 @@ fun MainScreen(
                     expandedParents = expandedParents,
                     pendingTaskIds = pendingTaskIds,
                     pendingMutationCount = pendingMutationCount,
+                    onSyncNow = taskListViewModel::syncNow,
                     onStatusFilterChange = taskListViewModel::setStatusFilter,
                     onCategoryToggle = taskListViewModel::toggleCategory,
                     onTagToggle = taskListViewModel::toggleTag,
@@ -265,9 +304,22 @@ fun MainScreen(
 
                 else -> SettingsContent(
                     employees = employees,
+                    tags = tagCatalog,
+                    categories = categoryCatalog,
+                    defaultCategoryId = defaultCategoryId,
+                    sortOrder = sortOrder,
                     onAddEmployee = settingsViewModel::addEmployee,
                     onRenameEmployee = settingsViewModel::renameEmployee,
                     onDeleteEmployee = settingsViewModel::deleteEmployee,
+                    onAddTag = settingsViewModel::addTag,
+                    onUpdateTag = settingsViewModel::updateTag,
+                    onDeleteTag = settingsViewModel::deleteTag,
+                    onAddCategory = settingsViewModel::addCategory,
+                    onUpdateCategory = settingsViewModel::updateCategory,
+                    onDeleteCategory = settingsViewModel::deleteCategory,
+                    onSetDefaultCategory = settingsViewModel::setDefaultCategory,
+                    onSetSortOrder = settingsViewModel::setSortOrder,
+                    onExport = onExport,
                     connection = connection,
                     onCopied = {
                         scope.launch { snackbarHostState.showSnackbar(copiedMessage) }

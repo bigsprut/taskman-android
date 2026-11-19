@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.PaddingValues
@@ -23,7 +24,10 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.Button
@@ -39,6 +43,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -51,6 +56,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
@@ -103,6 +109,8 @@ fun TaskEditorSheet(
 
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val draft = state.draft
+    // Выбор сотрудника — отдельный лист с поиском: справочник может быть большим (§5.3-Ф2).
+    var showEmployeePicker by rememberSaveable { mutableStateOf(false) }
 
     ModalBottomSheet(
         onDismissRequest = viewModel::close,
@@ -204,12 +212,10 @@ fun TaskEditorSheet(
                 }
 
                 item("employee") {
-                    SelectionSection(
+                    EmployeePickerField(
                         title = stringResource(R.string.editor_field_employee),
-                        options = state.employees.map { it.name to it.name },
-                        selectedIds = draft.source?.let(::setOf) ?: emptySet(),
-                        onToggle = { name -> viewModel.setEmployee(name) },
-                        leadingDotColor = { null },
+                        selectedName = state.draft?.source,
+                        onOpen = { showEmployeePicker = true },
                     )
                 }
 
@@ -276,6 +282,18 @@ fun TaskEditorSheet(
                 }
             }
         }
+    }
+
+    if (showEmployeePicker) {
+        EmployeePickerSheet(
+            employees = state.employees.map { it.name },
+            selectedName = state.draft?.source,
+            onSelect = { name ->
+                viewModel.setEmployee(name)
+                showEmployeePicker = false
+            },
+            onDismiss = { showEmployeePicker = false },
+        )
     }
 }
 
@@ -765,4 +783,142 @@ private const val KIB = 1024L
 object EditorTestTags {
     const val TITLE = "editor-title"
     const val NEW_SUBTASK = "editor-new-subtask"
+}
+/** Поле «Сотрудник»: показывает выбор и открывает лист-список (не чипы, §5.3-Ф2). */
+@Composable
+private fun EmployeePickerField(
+    title: String,
+    selectedName: String?,
+    onOpen: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleSmall,
+        )
+        OutlinedCard(
+            modifier = Modifier.fillMaxWidth(),
+            onClick = onOpen,
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = selectedName ?: stringResource(R.string.editor_employee_none),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (selectedName == null) {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    } else {
+                        MaterialTheme.colorScheme.onSurface
+                    },
+                    modifier = Modifier.weight(1f),
+                )
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = stringResource(R.string.editor_employee_pick),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Лист выбора сотрудника с поиском (§5.3-Ф2, решение владельца 20.11).
+ *
+ * Справочник может быть большим, поэтому: поиск сверху, прокручиваемый список, отдельный
+ * пункт «Без сотрудника» и явная отметка выбранного. Фильтр — [filterEmployees].
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun EmployeePickerSheet(
+    employees: List<String>,
+    selectedName: String?,
+    onSelect: (String?) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var query by rememberSaveable { mutableStateOf("") }
+    val filtered = remember(employees, query) { filterEmployees(employees, query) }
+
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+                .padding(bottom = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.editor_employee_pick),
+                style = MaterialTheme.typography.titleMedium,
+            )
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text(stringResource(R.string.editor_employee_search)) },
+                singleLine = true,
+                leadingIcon = {
+                    Icon(Icons.Filled.Search, contentDescription = null)
+                },
+            )
+            LazyColumn(modifier = Modifier.heightIn(max = 420.dp)) {
+                item("employee-none") {
+                    EmployeeOptionRow(
+                        name = stringResource(R.string.editor_employee_none),
+                        selected = selectedName == null,
+                        onClick = { onSelect(null) },
+                    )
+                }
+                items(filtered, key = { name -> "employee-$name" }) { name ->
+                    EmployeeOptionRow(
+                        name = name,
+                        selected = name == selectedName,
+                        onClick = { onSelect(name) },
+                    )
+                }
+                if (filtered.isEmpty()) {
+                    item("employee-empty") {
+                        Text(
+                            text = stringResource(R.string.editor_employee_empty),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(vertical = 12.dp),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun EmployeeOptionRow(
+    name: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = name,
+            style = MaterialTheme.typography.bodyLarge,
+            modifier = Modifier.weight(1f),
+        )
+        if (selected) {
+            Icon(
+                imageVector = Icons.Filled.Check,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+            )
+        }
+    }
 }

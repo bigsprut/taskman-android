@@ -22,8 +22,8 @@
     <string name="login_secure_note">Токен шифруется ключом Android Keystore и никогда не попадает в журналы приложения.</string>
     <string name="login_error_invalid_url">Адрес должен быть полным и начинаться с https://</string>
     <string name="login_error_empty_token">Введите токен доступа</string>
-    <string name="login_error_unauthorized">Сервер отклонил токен (401). Проверьте токен и повторите.</string>
-    <string name="login_error_network">Не удалось связаться с сервером. Проверьте адрес и подключение к сети.</string>
+    <string name="login_error_unauthorized">Неверный токен — сервер ответил 401. Проверьте токен и повторите.</string>
+    <string name="login_error_network">Нет связи с сервером: проверьте адрес и подключение к сети.</string>
     <string name="login_error_http">Сервер ответил ошибкой %1$d</string>
     <string name="login_error_data">Сервер вернул неожиданный ответ</string>
     <string name="login_error_storage">Не удалось сохранить токен на устройстве — попробуйте ещё раз</string>
@@ -190,4 +190,16 @@
     <string name="settings_export_hint">Соберёт все задачи в markdown и откроет системное «Поделиться».</string>
     <string name="settings_export_action">Экспортировать в Markdown</string>
     <string name="export_subject">Задачи</string>
-    <string name="export_failed">Не удалось открыть «Поделиться»</string></resources>
+    <string name="export_failed">Не удалось открыть «Поделиться»</string>    <!-- Выбор сотрудника списком с поиском (Ф2, решение владельца 20.11) -->
+    <string name="editor_employee_none">Без сотрудника</string>
+    <string name="editor_employee_pick">Выбрать сотрудника</string>
+    <string name="editor_employee_search">Поиск сотрудника</string>
+    <string name="editor_employee_empty">Никого не найдено</string>
+
+    <!-- Создание задачи из списка (Ф2) -->
+    <string name="action_create_task">Создать задачу</string>
+    <string name="create_task_title">Новая задача</string>
+    <string name="create_task_field">Название задачи</string>
+    <string name="create_task_confirm">Создать</string>
+    <string name="task_created">Задача создана</string>
+    <string name="create_task_failed">Не удалось создать задачу</string></resources>

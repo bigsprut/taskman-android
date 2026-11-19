@@ -83,6 +83,28 @@ object TaskPayload {
     )
 
     /**
+     * Новая корневая задача (§5.3-Ф2: явное создание из списка).
+     *
+     * `id = null` — сервер выдаст id; `category_id = null` — сработает категория по умолчанию
+     * из настроек инстанса (§4). `updated_at = null` — CAS не нужен новой задаче.
+     */
+    fun newTask(listId: String, title: String): TaskInDto = TaskInDto(
+        id = null,
+        listId = listId,
+        parentId = null,
+        categoryId = null,
+        title = title.trim(),
+        content = "",
+        status = TaskStatus.CREATED.wireValue,
+        source = null,
+        tags = emptyList(),
+        createdAt = null,
+        completedAt = null,
+        statusDate = null,
+        updatedAt = null,
+    )
+
+    /**
      * Новая подзадача: `id = null` — сервер выдаст id; список и родитель известны из контекста.
      */
     fun newSubtask(listId: String, parentId: String, title: String): TaskInDto = TaskInDto(

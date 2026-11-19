@@ -113,6 +113,8 @@ class DatabaseStateStore(
             attachments.map(AttachmentEntity::toDomain)
         }
 
+    override suspend fun firstListId(): String? = database.stateDao().firstListId()
+
     override fun observeDefaultCategoryId(): Flow<String?> =
         database.stateDao().observeSettings().map { settings -> settings?.defaultCategoryId }
 

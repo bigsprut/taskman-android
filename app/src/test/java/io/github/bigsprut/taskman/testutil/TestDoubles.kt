@@ -431,6 +431,11 @@ class FakeStateStore(initialTasks: List<Task> = emptyList()) :
 
     override suspend fun tagIds(taskId: String): List<String> = tagsByTask[taskId].orEmpty()
 
+    /** Список для новых задач: по умолчанию один, тесты могут переопределить. */
+    var firstListId: String? = "list-1"
+
+    override suspend fun firstListId(): String? = firstListId
+
     /** Кладёт задачу во «внутренний» снапшот вместе с её тегами — источник для мутаций. */
     fun putTask(entity: TaskEntity, tagIds: List<String> = emptyList()) {
         entities[entity.id] = entity

@@ -109,6 +109,23 @@ class TaskMutationRepository(
     }
 
     /**
+     * Новая корневая задача из списка (§5.3-Ф2: FAB «+»).
+     *
+     * `id` выдаёт сервер, поэтому очередь не подходит (как у подзадач): прямой путь, при
+     * сетевом сбое — сообщение, запись не копится. Категорию не задаём — сервер применит
+     * категорию по умолчанию из настроек (§4).
+     */
+    suspend fun createTask(title: String): MutationOutcome {
+        val trimmed = title.trim()
+        if (trimmed.isEmpty()) return MutationOutcome.Failed(ApiFailure.InvalidInput)
+        val listId = reader.firstListId()
+            ?: return MutationOutcome.Failed(
+                ApiFailure.Internal(IllegalStateException("no task list in local snapshot")),
+            )
+        return executeImmediate { api.upsertTasks(listOf(TaskPayload.newTask(listId, trimmed))) }
+    }
+
+    /**
      * Новая подзадача: `id` выдаёт сервер, локально его не придумать — поэтому только
      * прямой путь (без очереди). Сетевой сбой — сообщение, запись не копится.
      */

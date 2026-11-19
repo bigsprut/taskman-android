@@ -14,4 +14,10 @@ interface TaskSnapshotReader {
     suspend fun taskEntity(id: String): TaskEntity?
 
     suspend fun tagIds(taskId: String): List<String>
+
+    /**
+     * Список, в который попадает новая задача: контракт требует `list_id`, а списков в UI
+     * пока один (позиция 0). Если снапшота ещё нет — `null`, создать задачу нельзя.
+     */
+    suspend fun firstListId(): String?
 }

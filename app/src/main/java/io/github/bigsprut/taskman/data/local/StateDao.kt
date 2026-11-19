@@ -69,6 +69,9 @@ interface StateDao {
     suspend fun childrenOf(parentId: String): List<TaskEntity>
 
     /** Каталог тегов для чипов фильтра — отдельным потоком, с инвалидацией при замене снапшота. */
+    @Query("SELECT id FROM task_lists ORDER BY position LIMIT 1")
+    suspend fun firstListId(): String?
+
     @Query("SELECT * FROM server_settings WHERE id = 1")
     fun observeSettings(): Flow<ServerSettingsEntity?>
 

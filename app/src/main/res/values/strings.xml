@@ -73,6 +73,7 @@
     <string name="error_data">Сервер вернул данные в неизвестном формате</string>
     <string name="error_internal">Внутренняя ошибка приложения — попробуйте ещё раз</string>
     <string name="error_invalid_input">Значение недопустимо: введите непустое имя</string>
+    <string name="error_file_access">Нет доступа к файлу — отправьте его заново</string>
 
     <!-- Фильтры (Ф1): у каждой группы чипов обязательна читаемая подпись (§5.3) -->
     <string name="filter_status_label">Статус</string>

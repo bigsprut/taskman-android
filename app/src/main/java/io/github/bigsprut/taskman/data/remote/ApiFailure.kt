@@ -28,6 +28,12 @@ sealed class ApiFailure(message: String?, cause: Throwable? = null) : Exception(
     /** Прочие ответы сервера с кодом ошибки. */
     class Http(val code: Int, val serverError: String? = null) : ApiFailure("http-$code")
 
+    /**
+     * Файл, выбранный пользователем, не удалось прочитать: отправитель не выдал доступ к
+     * `content://`, файл удалён или провайдер отказал. Пользователю нужно отправить файл заново.
+     */
+    data object FileAccess : ApiFailure("file-access")
+
     /** Пустое/недопустимое значение, введённое пользователем: на сервер не отправляем. */
     data object InvalidInput : ApiFailure("invalid-input")
 

@@ -60,9 +60,7 @@ class AttachmentRepository(
 
     suspend fun upload(taskId: String, uri: String): AttachmentOutcome {
         val file = files.read(uri)
-            ?: return AttachmentOutcome.Failed(
-                ApiFailure.Internal(IllegalStateException("cannot read picked file: $uri")),
-            )
+            ?: return AttachmentOutcome.Failed(ApiFailure.FileAccess)
 
         val requestBody = file.bytes.toRequestBody(file.mimeType?.toMediaTypeOrNull())
         // Поле формы — именно `file` (ТЗ §4), иначе сервер не примет вложение.

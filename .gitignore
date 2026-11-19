@@ -1,0 +1,27 @@
+# Android/Gradle
+*.apk
+*.aab
+.gradle/
+build/
+app/build/
+local.properties
+*.keystore
+*.jks
+!debug.keystore
+keystore.properties
+captures/
+.externalNativeBuild/
+.cxx/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Секреты и окружение
+*.local.json
+secrets.*
+.env*
+
+# OS
+.DS_Store

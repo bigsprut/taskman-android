@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Правила резервного копирования.
+  Токен лежит в DataStore в зашифрованном виде, а ключ — в Android Keystore, который в бэкап
+  не входит; переносить снапшот задач и настройки на другое устройство тоже не нужно.
+  Поэтому backup/transfer для приложения отключён целиком (allowBackup=false + это правило).
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="root" path="." />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="root" path="." />
+    </device-transfer>
+</data-extraction-rules>

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Отладочный манифест: локальный стенд разработки (mock на фикстуре или свой инстанс)
+  обычно поднимается на http://localhost или http://10.0.2.2. Cleartext разрешён ТОЛЬКО
+  debug-сборке; release-манифест остаётся https-only.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application android:usesCleartextTraffic="true" />
+
+</manifest>

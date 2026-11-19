@@ -16,15 +16,35 @@ Android 17 (API 37).
 
 ## Сборка
 
+Нужен **JDK 17** (системная Java 11 не подходит: AGP 9.5 требует 17) и Android SDK с
+платформой `android-37.0` и build-tools `36.0.0`.
+
+`local.properties` в git не попадает; в нём путь к SDK и адрес своего инстанса:
+
+```properties
+sdk.dir=D\:\\Android\\SDK
+tm.base.url=https://example.com:8444
+```
+
+Адрес из `tm.base.url` подставляется в `BuildConfig.TM_BASE_URL` и служит значением по
+умолчанию на экране входа — введённый в приложении адрес сохраняется на устройстве.
+Без `local.properties` сборка тоже работает: подставляется placeholder из ТЗ.
+
 ```bash
-# local.properties (gitignored):
-#   tm.base.url=https://example.com:8444
-./gradlew test assembleDebug
+# Windows (PowerShell): JDK 17 из Zulu
+$env:JAVA_HOME='C:\Program Files\Zulu\zulu-17'
+
+./gradlew test assembleDebug          # тесты + debug APK
+./gradlew :app:lintDebug              # статический анализ
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-Токен доступа вводится в приложении при первом запуске и хранится в
-Keystore. В репо секретов нет и не будет.
+Локальный стенд для разработки без живого сервера — мок на эталонной фикстуре:
+`python tools/mock-server/mock_state_server.py --port 8443 --token local-dev-token`
+(подробности — в `tools/mock-server/README.md`; это инструмент разработки, не сервер продукта).
+
+Токен доступа вводится в приложении при первом запуске и хранится в Keystore. В репо
+секретов нет и не будет.
 
 ## Сервер
 

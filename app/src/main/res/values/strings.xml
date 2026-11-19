@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Задачи</string>
+
+    <!-- Каркас -->
+    <string name="nav_tasks">Список</string>
+    <string name="nav_settings">Настройки</string>
+    <string name="action_refresh">Обновить</string>
+    <string name="action_retry">Повторить</string>
+    <string name="action_copy">Скопировать</string>
+    <string name="action_show">Показать</string>
+    <string name="action_hide">Скрыть</string>
+    <string name="state_loading">Загрузка…</string>
+
+    <!-- Вход -->
+    <string name="login_title">Подключение</string>
+    <string name="login_subtitle">Укажите адрес вашего сервера «Задачи» и токен доступа. Токен хранится только на этом устройстве в зашифрованном виде.</string>
+    <string name="login_base_url">Адрес сервера</string>
+    <string name="login_base_url_hint">https://tasks.example.com:8444</string>
+    <string name="login_token">Токен доступа</string>
+    <string name="login_submit">Подключиться</string>
+    <string name="login_secure_note">Токен шифруется ключом Android Keystore и никогда не попадает в журналы приложения.</string>
+    <string name="login_error_invalid_url">Адрес должен быть полным и начинаться с https://</string>
+    <string name="login_error_empty_token">Введите токен доступа</string>
+    <string name="login_error_unauthorized">Сервер отклонил токен (401). Проверьте токен и повторите.</string>
+    <string name="login_error_network">Не удалось связаться с сервером. Проверьте адрес и подключение к сети.</string>
+    <string name="login_error_http">Сервер ответил ошибкой %1$d</string>
+    <string name="login_error_data">Сервер вернул неожиданный ответ</string>
+    <string name="login_error_storage">Не удалось сохранить токен на устройстве — попробуйте ещё раз</string>
+
+    <!-- Ожидание подтверждения устройства -->
+    <string name="device_title">Подтверждение устройства</string>
+    <string name="device_headline">Устройство ждёт подтверждения</string>
+    <string name="device_body">Сервер ещё не подтвердил новое устройство. Обычно это занимает до 30 секунд — экран обновится автоматически, ничего делать не нужно.</string>
+    <string name="device_id_label">Идентификатор устройства</string>
+    <string name="device_retry_now">Проверить сейчас</string>
+    <string name="device_next_attempt">Следующая проверка через %1$d с</string>
+    <string name="device_change_token">Сменить токен</string>
+    <string name="device_no_connection">Нет связи с сервером — повторяем автоматически</string>
+
+    <!-- Список задач -->
+    <string name="list_title">Задачи</string>
+    <string name="list_empty_title">Задач пока нет</string>
+    <string name="list_empty_body">На сервере нет ни одной задачи. Потяните список вниз, чтобы обновить.</string>
+    <string name="list_error_title">Не удалось загрузить задачи</string>
+    <string name="list_cached_warning">Показаны сохранённые данные — обновить не удалось</string>
+    <string name="list_subtask_prefix">⤷ </string>
+
+    <!-- Статусы -->
+    <string name="status_created">Создана</string>
+    <string name="status_inprogress">В работе</string>
+    <string name="status_completed">Выполнена</string>
+    <string name="status_canceled">Отменена</string>
+
+    <!-- Настройки -->
+    <string name="settings_title">Настройки</string>
+    <string name="settings_section_connection">Подключение</string>
+    <string name="settings_server">Сервер</string>
+    <string name="settings_device_id">Идентификатор устройства</string>
+    <string name="settings_version">Версия приложения</string>
+    <string name="settings_app_version">Версия %1$s</string>
+    <string name="settings_change_credentials">Сменить сервер и токен</string>
+    <string name="settings_security_note">Токен хранится в зашифрованном виде (Android Keystore). Локальный кэш задач очищается при выходе.</string>
+    <string name="settings_copied">Скопировано</string>
+
+    <!-- Ошибки синхронизации -->
+    <string name="error_network">Нет связи с сервером</string>
+    <string name="error_unauthorized">Токен больше не действует — войдите заново</string>
+    <string name="error_device_pending">Устройство не подтверждено сервером</string>
+    <string name="error_conflict">Задачу изменили на другом устройстве — данные обновляются</string>
+    <string name="error_http">Сервер ответил ошибкой %1$d</string>
+    <string name="error_data">Сервер вернул данные в неизвестном формате</string>
+    <string name="error_internal">Внутренняя ошибка приложения — попробуйте ещё раз</string>
+</resources>

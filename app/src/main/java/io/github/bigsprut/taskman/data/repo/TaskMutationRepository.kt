@@ -111,7 +111,13 @@ class TaskMutationRepository(
     suspend fun saveDraft(draft: TaskDraft): MutationOutcome {
         val existing = reader.taskEntity(draft.id)
         val tagIds = reader.tagIds(draft.id)
-        val payload = TaskPayload.fromDraft(draft)
+        // 20.11: базой CAS берём САМУЮ СВЕЖУЮ версию (подтверждённую сервером или из снапшота),
+        // а не ту, что лежит в черновике. Черновик переживает перезапуск процесса
+        // (`SavedStateHandle`) и после успешного сохранения может нести старый `updated_at` —
+        // закрытие редактора тогда уходило с устаревшей версией и получало ложный 409
+        // «задачу изменили на другом устройстве».
+        val base = latestVersion(draft.id) ?: draft.updatedAt
+        val payload = TaskPayload.fromDraft(draft.copy(updatedAt = base))
         if (existing != null && !isChanged(payload, existing, tagIds)) {
             return MutationOutcome.Success
         }
@@ -217,7 +223,9 @@ class TaskMutationRepository(
 
                         is ApiFailure.Conflict -> {
                             val actual = failure.actualUpdatedAt
-                            val acknowledged = acknowledgedVersions[record.taskId]
+                            // 20.11: «своя» версия — не только подтверждённая в этом процессе,
+                            // но и самая свежая из снапшота (после перезапуска карта пуста).
+                            val acknowledged = latestVersion(record.taskId)
                             val ownVersion = actual != null && acknowledged != null &&
                                 sameVersion(actual, acknowledged)
 

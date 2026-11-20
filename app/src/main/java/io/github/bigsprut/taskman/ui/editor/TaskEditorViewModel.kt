@@ -347,7 +347,12 @@ class TaskEditorViewModel(
             } else {
                 null
             }
-            val current = restored ?: fromDb
+            val current = (restored ?: fromDb)?.let { draft ->
+                // 20.11: восстановленный черновик мог пережить сохранение и нести старый
+                // updated_at — версию берём из свежего снапшота, иначе закрытие редактора
+                // уходит со стухшей версией и получает ложный 409 «изменили на другом устройстве».
+                fromDb?.let { draft.copy(updatedAt = it.updatedAt) } ?: draft
+            }
             if (current == null) {
                 _state.update { it.copy(isOpen = false, isLoading = false) }
                 return@launch

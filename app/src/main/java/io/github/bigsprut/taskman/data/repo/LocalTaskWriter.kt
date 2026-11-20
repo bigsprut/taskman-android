@@ -14,6 +14,13 @@ import kotlinx.coroutines.withContext
 interface LocalTaskWriter {
     suspend fun applyUpsert(entity: TaskEntity)
     suspend fun applyDelete(taskId: String)
+
+    /**
+     * Обновляет локальную версию (`updated_at`) из ответа сервера после собственной мутации
+     * (Ф7). По умолчанию — no-op: тестовые писатели могут не вести версии, а боевой
+     * `DatabaseLocalTaskWriter` пишет её в Room.
+     */
+    suspend fun applyServerVersion(taskId: String, updatedAt: Double) = Unit
 }
 
 /** Реализация поверх Room: правка полей задачи или soft-delete поддерева. */
@@ -28,4 +35,9 @@ class DatabaseLocalTaskWriter(
     override suspend fun applyDelete(taskId: String) = withContext(Dispatchers.IO) {
         database.stateDao().markDeletedSubtree(taskId)
     }
+
+    override suspend fun applyServerVersion(taskId: String, updatedAt: Double) =
+        withContext(Dispatchers.IO) {
+            database.stateDao().updateTaskUpdatedAt(taskId, updatedAt)
+        }
 }

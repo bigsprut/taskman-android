@@ -516,6 +516,9 @@ class FakePendingMutationDao : PendingMutationDao {
  *
  * Нужен, чтобы проверять оптимистичность без Android/Room: правка обязана попасть в локальное
  * хранилище до попытки отправить её на сервер.
+ *
+ * С Ф7 помнит и версии из ответа сервера (`applyServerVersion`): без записи `updated_at`
+ * следующая правка ушла бы со старой версией и получила ложный 409.
  */
 class FakeLocalTaskWriter : LocalTaskWriter {
 
@@ -534,6 +537,21 @@ class FakeLocalTaskWriter : LocalTaskWriter {
     /** id последнего локально удалённого поддерева. */
     var lastDeletedId: String? = null
 
+    /** Сколько раз применяли версию из ответа сервера (`applyServerVersion`, Ф7). */
+    var applyServerVersionCalls: Int = 0
+
+    /** Версии, подтверждённые сервером, по id задачи: `taskId → updated_at`. */
+    val serverVersions = mutableMapOf<String, Double>()
+
+    /**
+     * Куда продублировать версию из ответа сервера.
+     *
+     * В бою `writer` и `reader` — одна и та же Room, поэтому новая версия сразу видна следующей
+     * правке. В тесте это разные объекты: без явной связи регресс «вторая правка уходит со
+     * старой версией» (ложный 409) не воспроизвести. `null` — версия только запоминается.
+     */
+    var onServerVersion: ((taskId: String, updatedAt: Double) -> Unit)? = null
+
     override suspend fun applyUpsert(entity: TaskEntity) {
         upsertCalls += 1
         lastUpsert = entity
@@ -543,6 +561,12 @@ class FakeLocalTaskWriter : LocalTaskWriter {
     override suspend fun applyDelete(taskId: String) {
         deleteCalls += 1
         lastDeletedId = taskId
+    }
+
+    override suspend fun applyServerVersion(taskId: String, updatedAt: Double) {
+        applyServerVersionCalls += 1
+        serverVersions[taskId] = updatedAt
+        onServerVersion?.invoke(taskId, updatedAt)
     }
 }
 

@@ -47,6 +47,7 @@ import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.Surface
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -128,6 +129,32 @@ fun TaskEditorSheet(
                 isDirty = state.isDirty,
                 onClose = viewModel::close,
             )
+
+            if (state.conflict) {
+                // 409 с чужой версией: снекбар за модальным листом не виден, поэтому показываем
+                // конфликт прямо здесь и даём осознанно перечитать актуальную версию (Ф7).
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = MaterialTheme.colorScheme.errorContainer,
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = stringResource(R.string.editor_conflict_inline),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            modifier = Modifier.weight(1f),
+                        )
+                        TextButton(onClick = viewModel::reloadAfterConflict) {
+                            Text(stringResource(R.string.editor_conflict_reload))
+                        }
+                    }
+                }
+            }
 
             if (state.isLoading || draft == null) {
                 Column(

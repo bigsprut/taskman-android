@@ -71,6 +71,11 @@ data class EditorUiState(
     val isDirty: Boolean = false,
     val isSaving: Boolean = false,
     val isLoading: Boolean = false,
+    /**
+     * Сохранение наткнулось на 409 (Ф7). Показывается баннером **внутри** листа: снекбар
+     * за модальным листом не виден, а сообщение о конфликте терять нельзя.
+     */
+    val conflict: Boolean = false,
     val history: List<TaskHistoryEntry> = emptyList(),
     val children: List<Task> = emptyList(),
     val tags: List<Tag> = emptyList(),
@@ -170,11 +175,14 @@ class TaskEditorViewModel(
             return
         }
 
-        _state.update { it.copy(isSaving = true) }
+        _state.update { it.copy(isSaving = true, conflict = false) }
         viewModelScope.launch {
             when (val outcome = mutations.saveDraft(draft)) {
                 MutationOutcome.Success -> {
-                    originalDraft = draft
+                    // Версия из ответа сервера: следующий автосейв не должен уйти со старой
+                    // и получить ложный 409 (Ф7).
+                    val freshVersion = mutations.latestVersion(draft.id) ?: draft.updatedAt
+                    originalDraft = draft.copy(updatedAt = freshVersion)
                     clearPersistedDraft()
                     finishClose()
                 }
@@ -189,7 +197,7 @@ class TaskEditorViewModel(
 
                 is MutationOutcome.Conflict -> {
                     _messages.emit(EditorMessage.SaveConflict)
-                    _state.update { it.copy(isSaving = false) }
+                    _state.update { it.copy(isSaving = false, conflict = true) }
                 }
 
                 is MutationOutcome.Failed -> {
@@ -198,6 +206,19 @@ class TaskEditorViewModel(
                 }
             }
         }
+    }
+
+    /**
+     * Пользователь увидел конфликт и хочет продолжить с актуальной версией: перечитываем
+     * задачу из локального снапшота (сервер уже применён предыдущим `refresh`) и сбрасываем
+     * накопленный черновик — это осознанный отказ от своих правок, а не тихая потеря.
+     */
+    fun reloadAfterConflict() {
+        val taskId = _state.value.taskId ?: return
+        clearPersistedDraft()
+        originalDraft = null
+        _state.update { it.copy(conflict = false, isDirty = false) }
+        restoreOrLoad(taskId)
     }
 
     fun setTitle(value: String) = updateDraft { it.copy(title = value) }
@@ -373,6 +394,7 @@ class TaskEditorViewModel(
             it.copy(
                 draft = updated,
                 isDirty = if (original != null) updated != original else true,
+                conflict = false,
             )
         }
         persistDraft(updated)

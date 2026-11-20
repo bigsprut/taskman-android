@@ -121,6 +121,13 @@ interface StateDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertTask(task: TaskEntity)
 
+    /**
+     * Версия задачи из ответа сервера (Ф7): после собственной мутации обязательно обновляем
+     * локальный `updated_at`, иначе следующий upsert уйдёт со старой версией и получит ложный 409.
+     */
+    @Query("UPDATE tasks SET updatedAt = :updatedAt WHERE id = :taskId")
+    suspend fun updateTaskUpdatedAt(taskId: String, updatedAt: Double)
+
     /** Локальное soft-delete задачи вместе с подзадачами (Ф4): как это сделает сервер. */
     @Query("UPDATE tasks SET deleted = 1 WHERE id = :taskId OR parentId = :taskId")
     suspend fun markDeletedSubtree(taskId: String)

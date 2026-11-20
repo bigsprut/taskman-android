@@ -206,4 +206,6 @@
     <string name="filters_toggle">Отборы</string>
     <string name="filters_toggle_counted">Отборы · %1$d</string>
     <string name="filters_toggle_show">Показать отборы</string>
-    <string name="filters_toggle_hide">Скрыть отборы</string></resources>
+    <string name="filters_toggle_hide">Скрыть отборы</string>    <!-- Конфликт версий внутри редактора (Ф7) -->
+    <string name="editor_conflict_inline">Задачу изменили на другом устройстве. Обновите данные — ваши правки не потеряны молча.</string>
+    <string name="editor_conflict_reload">Обновить</string></resources>

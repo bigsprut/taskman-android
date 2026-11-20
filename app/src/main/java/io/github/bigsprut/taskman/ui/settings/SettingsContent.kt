@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -45,6 +46,7 @@ import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import io.github.bigsprut.taskman.BuildConfig
 import io.github.bigsprut.taskman.R
@@ -507,6 +509,10 @@ private fun CatalogItemDialog(
                     onValueChange = { value = it },
                     label = { Text(stringResource(R.string.settings_catalog_title)) },
                     singleLine = true,
+                    // 20.11: «Иванов Иван» — каждое слово с заглавной (имена/фамилии).
+                    keyboardOptions = KeyboardOptions(
+                        capitalization = KeyboardCapitalization.Words,
+                    ),
                 )
                 if (showColor) {
                     Row(

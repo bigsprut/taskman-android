@@ -26,6 +26,13 @@
 -keep,allowobfuscation,allowshrinking class retrofit2.Response
 -keep,allowobfuscation,allowshrinking class kotlin.coroutines.Continuation
 
+# DTO JSON: R8 не считает ссылкой тип-параметр `Response<EmployeeResponse>` в сигнатуре
+# suspend-функции Retrofit — в release классы ответов выкидывались (usage.txt:
+# EmployeeResponse, DeleteEmployeeResponse), и kotlinx не находил сериализатор →
+# «Внутренняя ошибка приложения» при добавлении/удалении сотрудника (20.11).
+# Держим все DTO с их $$serializer и Companion: классы крошечные, цена нулевая.
+-keep class io.github.bigsprut.taskman.data.remote.dto.** { *; }
+
 # OkHttp: опциональные платформенные интеграции (см. правила OkHttp для R8).
 -dontwarn org.conscrypt.**
 -dontwarn org.bouncycastle.**

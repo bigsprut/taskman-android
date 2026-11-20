@@ -104,9 +104,13 @@ class SettingsStore(
     /**
      * Свёрнут ли блок фильтров (§5.3-Ф1, решение владельца 20.11) — как `taskman_filtershidden`
      * в PWA: состояние живёт на устройстве и сохраняется между запусками.
+     *
+     * По умолчанию СВЁРНУТ (решение владельца 20.11, вечер): фильтры занимают пол-экрана,
+     * а нужны редко. Если ключа ещё нет (свежая установка/сброс) — отдаём `true`;
+     * выбор владельца после переключения сохраняется и имеет приоритет.
      */
     fun observeFiltersHidden(): Flow<Boolean> = dataStore.data.map { preferences ->
-        preferences[Keys.FILTERS_HIDDEN] ?: false
+        preferences[Keys.FILTERS_HIDDEN] ?: true
     }
 
     suspend fun saveFiltersHidden(hidden: Boolean) = withContext(Dispatchers.IO) {

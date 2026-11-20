@@ -152,14 +152,15 @@
 
     <!-- Сотрудники (Ф3) -->
     <string name="settings_employees">Сотрудники</string>
-    <string name="settings_employee_add">Добавить</string>
-    <string name="settings_employee_name">Имя сотрудника</string>
+    <string name="settings_employee_add">Добавить сотрудника</string>
+    <string name="settings_employee_new">Новый сотрудник</string>
     <string name="settings_employee_rename">Переименовать</string>
     <string name="settings_employee_remove">Удалить</string>
     <string name="settings_employee_delete_title">Удалить сотрудника?</string>
     <string name="settings_employee_delete_text">«%1$s» будет удалён из справочника. Имена, уже указанные в задачах, не изменятся.</string>
     <string name="settings_employee_failed">Не удалось изменить справочник сотрудников</string>
     <string name="common_save">Сохранить</string>
+    <string name="common_add">Добавить</string>
     <string name="common_cancel">Отмена</string>
 
     <!-- Офлайн-очередь (Ф4) -->
@@ -171,7 +172,9 @@
     <string name="settings_categories">Категории</string>
     <string name="settings_tag_add">Добавить тег</string>
     <string name="settings_category_add">Добавить категорию</string>
+    <string name="settings_tag_new">Новый тег</string>
     <string name="settings_tag_edit">Изменить тег</string>
+    <string name="settings_category_new">Новая категория</string>
     <string name="settings_category_edit">Изменить категорию</string>
     <string name="settings_catalog_title">Название</string>
     <string name="settings_catalog_color">Цвет</string>

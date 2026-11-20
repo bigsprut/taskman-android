@@ -2,6 +2,7 @@ package io.github.bigsprut.taskman.data.repo
 
 import com.google.common.truth.Truth.assertThat
 import io.github.bigsprut.taskman.data.remote.ApiFailure
+import io.github.bigsprut.taskman.domain.TaskDraft
 import io.github.bigsprut.taskman.testutil.FakeLocalTaskWriter
 import io.github.bigsprut.taskman.testutil.FakePendingMutationDao
 import io.github.bigsprut.taskman.testutil.FakeStateStore
@@ -86,6 +87,26 @@ class TaskMutationRepositoryTest {
         val payload = api.lastUpserted!!.single()
         assertThat(payload.status).isEqualTo("created")
         assertThat(payload.completedAt).isNull()
+    }
+
+    @Test
+    fun `saveDraft берёт версию из снапшота, а не из устаревшего черновика`() = runTest {
+        store.putTask(entity, tagIds = emptyList())
+        // Черновик, переживший сохранение: в нём остался старый updated_at.
+        val staleDraft = TaskDraft(
+            id = TASK_ID,
+            listId = "list-1",
+            parentId = null,
+            title = "Помыть посуду и вытереть стол",
+            updatedAt = serverVersion - 100.0,
+        )
+
+        val outcome = mutations.saveDraft(staleDraft)
+
+        assertThat(outcome).isEqualTo(MutationOutcome.Success)
+        assertThat(api.upsertCalls).isEqualTo(1)
+        // База CAS — свежая версия снапшота, иначе сервер ответил бы 409.
+        assertThat(api.lastUpserted!!.single().updatedAt).isEqualTo(serverVersion)
     }
 
     @Test

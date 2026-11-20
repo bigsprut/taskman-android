@@ -18,7 +18,6 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -54,6 +53,7 @@ import io.github.bigsprut.taskman.domain.Category
 import io.github.bigsprut.taskman.domain.Employee
 import io.github.bigsprut.taskman.domain.Tag
 import io.github.bigsprut.taskman.domain.TaskSortOrder
+import io.github.bigsprut.taskman.ui.common.SwipeToDeleteRow
 import io.github.bigsprut.taskman.ui.common.parseTaskmanColor
 import io.github.bigsprut.taskman.ui.session.ConnectionUiModel
 import kotlinx.coroutines.launch
@@ -93,11 +93,8 @@ fun SettingsContent(
     val scope = rememberCoroutineScope()
 
     var renameTarget by rememberSaveable { mutableStateOf<String?>(null) }
-    var deleteTarget by rememberSaveable { mutableStateOf<String?>(null) }
     var editedTagId by rememberSaveable { mutableStateOf<String?>(null) }
     var editedCategoryId by rememberSaveable { mutableStateOf<String?>(null) }
-    var deletedCatalogName by rememberSaveable { mutableStateOf<String?>(null) }
-    var deletedCatalogKind by rememberSaveable { mutableStateOf<String?>(null) }
 
     Column(
         modifier = modifier
@@ -161,18 +158,23 @@ fun SettingsContent(
         // --- Теги (Ф5) ---
         SectionLabel(stringResource(R.string.settings_tags))
         tags.forEach { tag ->
-            CatalogRow(
-                title = tag.title,
-                color = tag.color,
-                editContentDescription = stringResource(R.string.settings_employee_rename),
-                deleteContentDescription = stringResource(R.string.settings_employee_remove),
-                onEdit = { editedTagId = tag.id },
-                onDelete = {
-                    deletedCatalogName = tag.title
-                    deletedCatalogKind = KIND_TAG
-                    deleteTarget = tag.id
-                },
-            )
+            // 20.11: удаление — только смахиванием влево с подтверждением (ТЗ §5.2),
+            // видимых корзин в настройках больше нет.
+            SwipeToDeleteRow(
+                title = stringResource(R.string.settings_catalog_delete_title),
+                text = stringResource(R.string.settings_catalog_delete_text, tag.title),
+                confirmLabel = stringResource(R.string.settings_employee_remove),
+                cancelLabel = stringResource(R.string.common_cancel),
+                onDelete = { onDeleteTag(tag.id) },
+            ) {
+                CatalogRow(
+                    title = tag.title,
+                    color = tag.color,
+                    editContentDescription = stringResource(R.string.settings_employee_rename),
+                    onEdit = { editedTagId = tag.id },
+                )
+            }
+            HorizontalDivider()
         }
         AddRow(
             label = stringResource(R.string.settings_tag_add),
@@ -185,18 +187,21 @@ fun SettingsContent(
         // --- Категории (Ф5) ---
         SectionLabel(stringResource(R.string.settings_categories))
         categories.forEach { category ->
-            CatalogRow(
-                title = category.title,
-                color = category.color,
-                editContentDescription = stringResource(R.string.settings_employee_rename),
-                deleteContentDescription = stringResource(R.string.settings_employee_remove),
-                onEdit = { editedCategoryId = category.id },
-                onDelete = {
-                    deletedCatalogName = category.title
-                    deletedCatalogKind = KIND_CATEGORY
-                    deleteTarget = category.id
-                },
-            )
+            SwipeToDeleteRow(
+                title = stringResource(R.string.settings_catalog_delete_title),
+                text = stringResource(R.string.settings_catalog_delete_text, category.title),
+                confirmLabel = stringResource(R.string.settings_employee_remove),
+                cancelLabel = stringResource(R.string.common_cancel),
+                onDelete = { onDeleteCategory(category.id) },
+            ) {
+                CatalogRow(
+                    title = category.title,
+                    color = category.color,
+                    editContentDescription = stringResource(R.string.settings_employee_rename),
+                    onEdit = { editedCategoryId = category.id },
+                )
+            }
+            HorizontalDivider()
         }
         AddRow(
             label = stringResource(R.string.settings_category_add),
@@ -261,10 +266,16 @@ fun SettingsContent(
         SectionLabel(stringResource(R.string.settings_employees))
 
         employees.forEach { employee ->
-            ListItem(
-                headlineContent = { Text(employee.name) },
-                trailingContent = {
-                    Row {
+            SwipeToDeleteRow(
+                title = stringResource(R.string.settings_employee_delete_title),
+                text = stringResource(R.string.settings_employee_delete_text, employee.name),
+                confirmLabel = stringResource(R.string.settings_employee_remove),
+                cancelLabel = stringResource(R.string.common_cancel),
+                onDelete = { onDeleteEmployee(employee.id) },
+            ) {
+                ListItem(
+                    headlineContent = { Text(employee.name) },
+                    trailingContent = {
                         IconButton(onClick = { renameTarget = employee.id }) {
                             Icon(
                                 imageVector = Icons.Filled.Edit,
@@ -272,16 +283,9 @@ fun SettingsContent(
                                 modifier = Modifier.size(20.dp),
                             )
                         }
-                        IconButton(onClick = { deleteTarget = employee.id }) {
-                            Icon(
-                                imageVector = Icons.Filled.Delete,
-                                contentDescription = stringResource(R.string.settings_employee_remove),
-                                modifier = Modifier.size(20.dp),
-                            )
-                        }
-                    }
-                },
-            )
+                    },
+                )
+            }
             HorizontalDivider()
         }
 
@@ -374,61 +378,6 @@ fun SettingsContent(
             onDismiss = { editedCategoryId = null },
         )
     }
-
-    val deletedCatalogItem = when (deletedCatalogKind) {
-        KIND_TAG -> tags.firstOrNull { it.id == deleteTarget }
-        KIND_CATEGORY -> categories.firstOrNull { it.id == deleteTarget }
-        else -> null
-    }
-    if (deletedCatalogItem != null && deletedCatalogName != null) {
-        AlertDialog(
-            onDismissRequest = { deleteTarget = null },
-            title = { Text(stringResource(R.string.settings_catalog_delete_title)) },
-            text = { Text(stringResource(R.string.settings_catalog_delete_text, deletedCatalogName.orEmpty())) },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        val deletedId = deleteTarget
-                        if (deletedId != null) {
-                            if (deletedCatalogKind == KIND_TAG) onDeleteTag(deletedId) else onDeleteCategory(deletedId)
-                        }
-                        deleteTarget = null
-                    },
-                ) {
-                    Text(stringResource(R.string.settings_employee_remove))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { deleteTarget = null }) {
-                    Text(stringResource(R.string.common_cancel))
-                }
-            },
-        )
-    }
-
-    val deletedEmployee = employees.firstOrNull { it.id == deleteTarget && deletedCatalogKind == null }
-    if (deletedEmployee != null) {
-        AlertDialog(
-            onDismissRequest = { deleteTarget = null },
-            title = { Text(stringResource(R.string.settings_employee_delete_title)) },
-            text = { Text(stringResource(R.string.settings_employee_delete_text, deletedEmployee.name)) },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        onDeleteEmployee(deletedEmployee.id)
-                        deleteTarget = null
-                    },
-                ) {
-                    Text(stringResource(R.string.settings_employee_remove))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { deleteTarget = null }) {
-                    Text(stringResource(R.string.common_cancel))
-                }
-            },
-        )
-    }
 }
 
 @Composable
@@ -441,15 +390,13 @@ private fun SectionLabel(text: String) {
     )
 }
 
-/** Строка тега/категории: цветная точка, название, переименовать/удалить. */
+/** Строка тега/категории: цветная точка, название и переименование (удаление — свайпом). */
 @Composable
 private fun CatalogRow(
     title: String,
     color: String?,
     editContentDescription: String,
-    deleteContentDescription: String,
     onEdit: () -> Unit,
-    onDelete: () -> Unit,
 ) {
     ListItem(
         leadingContent = {
@@ -462,25 +409,15 @@ private fun CatalogRow(
         },
         headlineContent = { Text(title) },
         trailingContent = {
-            Row {
-                IconButton(onClick = onEdit) {
-                    Icon(
-                        imageVector = Icons.Filled.Edit,
-                        contentDescription = editContentDescription,
-                        modifier = Modifier.size(20.dp),
-                    )
-                }
-                IconButton(onClick = onDelete) {
-                    Icon(
-                        imageVector = Icons.Filled.Delete,
-                        contentDescription = deleteContentDescription,
-                        modifier = Modifier.size(20.dp),
-                    )
-                }
+            IconButton(onClick = onEdit) {
+                Icon(
+                    imageVector = Icons.Filled.Edit,
+                    contentDescription = editContentDescription,
+                    modifier = Modifier.size(20.dp),
+                )
             }
         },
     )
-    HorizontalDivider()
 }
 
 /** Строка добавления в справочник: поле и кнопка. */
@@ -608,7 +545,3 @@ private fun CatalogItemDialog(
 
 /** Метка ClipData для системного менеджера буфера. */
 private const val CLIP_LABEL = "taskman-device-id"
-
-/** Какой справочник удаляем: тег или категорию (диалог подтверждения общий). */
-private const val KIND_TAG = "tag"
-private const val KIND_CATEGORY = "category"

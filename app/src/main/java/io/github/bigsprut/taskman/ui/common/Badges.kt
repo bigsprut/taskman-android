@@ -1,6 +1,7 @@
 package io.github.bigsprut.taskman.ui.common
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -34,12 +35,17 @@ import io.github.bigsprut.taskman.domain.TaskStatus
 
 @Composable
 fun StatusBadge(status: TaskStatus, modifier: Modifier = Modifier) {
+    // Цветокод §5.2: заливка по семейству статуса, текст — авто-контраст по яркости.
+    val palette = statusColorsFor(status.colorFamily(), isSystemInDarkTheme())
     Text(
         text = stringResource(status.labelRes()),
         style = MaterialTheme.typography.labelMedium,
-        color = status.labelColor(),
+        color = palette.content,
         maxLines = 1,
-        modifier = modifier,
+        modifier = modifier
+            .clip(RoundedCornerShape(percent = 50))
+            .background(palette.container)
+            .padding(horizontal = 8.dp, vertical = 2.dp),
     )
 }
 

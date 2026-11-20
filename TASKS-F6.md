@@ -42,3 +42,10 @@
 `FilterCollapseTest` (6). Грабли: `filtersHidden` — `stateIn(WhileSubscribed)` (без подписчика
 `.value` не читает DataStore), `saveFiltersHidden` уходит на `Dispatchers.IO` — в тестах ждать
 с таймаутом, а не `advanceUntilIdle()`.
+
+### Дополнение 2: F6-07 цветокод статусов
+
+`StatusColorFamily` + `statusColorsFor`, бейдж на заливке, акценты чипов фильтра,
+`contrastRatio`. Тесты: `StatusColorsTest` (14), `ContrastTest` (12, расширен метрикой WCAG).
+Грабли: `Color.luminance()` в Compose 1.12 работает и на JVM (но для независимости считай
+яркость вручную); Truth — `assertWithMessage(...).that(...)`, не `assertThat(...).withMessage`.

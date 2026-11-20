@@ -43,6 +43,7 @@ import io.github.bigsprut.taskman.domain.TaskRowItem
 import io.github.bigsprut.taskman.domain.TaskStatus
 import io.github.bigsprut.taskman.ui.common.AttachmentBadge
 import io.github.bigsprut.taskman.ui.common.CategoryDot
+import io.github.bigsprut.taskman.ui.common.DeleteSwipeBackground
 import io.github.bigsprut.taskman.ui.common.StatusBadge
 import io.github.bigsprut.taskman.ui.common.TagChip
 import kotlinx.coroutines.launch
@@ -228,22 +229,6 @@ private fun GroupProgress(
 }
 
 /** Фон под смахиваемой строкой: подсказка, что жест означает удаление. */
-@Composable
-private fun DeleteSwipeBackground() {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.errorContainer)
-            .padding(horizontal = 24.dp),
-        contentAlignment = Alignment.CenterEnd,
-    ) {
-        Icon(
-            imageVector = Icons.Filled.Delete,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onErrorContainer,
-        )
-    }
-}
 
 private const val SWIPE_THRESHOLD_FRACTION = 0.35f
 private val CHILD_INDENT = 24.dp

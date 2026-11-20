@@ -53,6 +53,12 @@ internal class FakeApi : TaskmanApi {
     var upsertCalls: Int = 0
     var lastUpserted: List<TaskInDto> = emptyList()
 
+    /** id задач, удаление которых пришло на сервер (Ф8: свайп-удаление в редакторе). */
+    var deleteTaskCalls: List<String> = emptyList()
+
+    /** id вложений, удаление которых пришло на сервер (Ф8: свайп-удаление в редакторе). */
+    var deleteAttachmentCalls: List<String> = emptyList()
+
     override suspend fun getState(): Response<StateResponse> =
         Response.success(StateResponse(serverTime = SERVER_TIME))
 
@@ -63,8 +69,10 @@ internal class FakeApi : TaskmanApi {
         return Response.success(UpsertTasksResponse(saved = saved, serverTime = SERVER_TIME))
     }
 
-    override suspend fun deleteTask(id: String): Response<DeleteTaskResponse> =
-        Response.success(DeleteTaskResponse(deleted = id))
+    override suspend fun deleteTask(id: String): Response<DeleteTaskResponse> {
+        deleteTaskCalls = deleteTaskCalls + id
+        return Response.success(DeleteTaskResponse(deleted = id))
+    }
 
     override suspend fun uploadAttachment(
         taskId: String,
@@ -72,8 +80,10 @@ internal class FakeApi : TaskmanApi {
     ): Response<AttachmentUploadResponse> =
         Response.success(AttachmentUploadResponse(id = "att-1", name = "file", size = 0))
 
-    override suspend fun deleteAttachment(id: String): Response<DeleteAttachmentResponse> =
-        Response.success(DeleteAttachmentResponse(deleted = id))
+    override suspend fun deleteAttachment(id: String): Response<DeleteAttachmentResponse> {
+        deleteAttachmentCalls = deleteAttachmentCalls + id
+        return Response.success(DeleteAttachmentResponse(deleted = id))
+    }
 
     override suspend fun createEmployee(body: EmployeeInDto): Response<EmployeeResponse> =
         Response.success(EmployeeResponse(id = "emp-1", name = body.name))
@@ -123,6 +133,16 @@ internal class FakeStore : StateStore, TaskSnapshotReader, AttachmentStore {
     private val entities = mutableMapOf<String, TaskEntity>()
     private val tagsByTask = mutableMapOf<String, List<String>>()
 
+    /**
+     * Вложения по задачам: поток создаётся лениво — UI подписывается на вложения раньше,
+     * чем тест положит строки, и должен увидеть пустой список, а не упасть (как в Room).
+     */
+    private val attachmentsByTask = mutableMapOf<String, MutableStateFlow<List<Attachment>>>()
+
+    fun putAttachments(taskId: String, attachments: List<Attachment>) {
+        attachmentsByTask.getOrPut(taskId) { MutableStateFlow(emptyList()) }.value = attachments
+    }
+
     fun putTask(entity: TaskEntity, tagIds: List<String> = emptyList()) {
         entities[entity.id] = entity
         tagsByTask[entity.id] = tagIds
@@ -161,9 +181,10 @@ internal class FakeStore : StateStore, TaskSnapshotReader, AttachmentStore {
     }
 
     override fun observeAttachments(taskId: String): Flow<List<Attachment>> =
-        MutableStateFlow(emptyList())
+        attachmentsByTask.getOrPut(taskId) { MutableStateFlow(emptyList()) }
 
-    override suspend fun findAttachment(attachmentId: String): Attachment? = null
+    override suspend fun findAttachment(attachmentId: String): Attachment? =
+        attachmentsByTask.values.flatMap { it.value }.firstOrNull { it.id == attachmentId }
 
     override suspend fun firstListId(): String? = "list-1"
 

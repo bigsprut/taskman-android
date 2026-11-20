@@ -107,8 +107,10 @@ self-hosted бэкенду taskman (FastAPI + SQLite). Бэкенд и PWA-кл�
   Edge-to-edge включён.
 - **Каркас**: экраны в `Scaffold` c `TopAppBar`; снекбары через Scaffold
   host. Внизу — NavigationBar (Список / Настройки-справочники).
-- **Жесты**: удаление задачи — M3 `SwipeToDismissBox` (влево, с диалогом
-  подтверждения). Системный **predictive back** включён
+- **Жесты**: удаление — M3 `SwipeToDismissBox` (смахивание влево, с
+  подтверждением диалогом) — ВЕЗДЕ: строки задач в списке, подзадачи и
+  вложения внутри редактора (политика владельца: никаких видимых кнопок
+  удаления). Системный **predictive back** включён
   (`android:enableOnBackInvokedCallback="true"`). Скролл — `LazyColumn` со
   стабильными ключами (id задачи), не index.
 - **Иконка**: adaptive icon (фон + foreground + monochrome слой). Splash —

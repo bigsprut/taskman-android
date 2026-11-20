@@ -41,10 +41,10 @@ import org.junit.Test
 /**
  * Скрываемый блок фильтров (§5.3-Ф1, решение владельца 20.11).
  *
- * Требование из живой приёмки: пользователь свернул фильтры — и они остаются свёрнутыми после
- * перезапуска приложения. Поэтому флаг живёт не в `rememberSaveable`, а в DataStore: здесь
- * проверяется весь путь «нажал → ViewModel → SettingsStore → DataStore → новый экземпляр
- * экрана снова видит свёрнутый блок».
+ * Владелец попросил по умолчанию держать фильтры СВЁРНУТЫМИ (они занимают пол-экрана),
+ * а развёрнутое состояние — запоминать. Поэтому флаг живёт не в `rememberSaveable`,
+ * а в DataStore: здесь проверяется весь путь «нажал → ViewModel → SettingsStore → DataStore →
+ * новый экземпляр экрана снова видит то же состояние».
  *
  * `filtersHidden` — это `stateIn(WhileSubscribed)`: без подписчика поток не работает, поэтому
  * в тесте, как и в UI, на него сначала подписываются. Сохранение уходит на `Dispatchers.IO`,
@@ -76,51 +76,51 @@ class FilterCollapseTest {
     private lateinit var viewModel: TaskListViewModel
 
     @Test
-    fun `по умолчанию блок фильтров развёрнут`() = collapseTest {
-        assertThat(viewModel.filtersHidden.value).isFalse()
+    fun `по умолчанию блок фильтров свёрнут`() = collapseTest {
+        assertThat(viewModel.filtersHidden.value).isTrue()
         // Умолчание приходит из кода, а не из сохранённого значения: ключа ещё нет.
-        assertThat(settings.observeFiltersHidden().first()).isFalse()
+        assertThat(settings.observeFiltersHidden().first()).isTrue()
         assertThat(preferences.data.first()[FILTERS_HIDDEN_KEY]).isNull()
     }
 
     @Test
-    fun `toggleFilters сворачивает блок и сохраняет флаг в DataStore`() = collapseTest {
-        viewModel.toggleFilters()
-        awaitFiltersHidden(true)
-
-        assertThat(viewModel.filtersHidden.value).isTrue()
-        // Персистентность проверяется чтением хранилища, а не полем ViewModel.
-        assertThat(settings.observeFiltersHidden().first()).isTrue()
-        assertThat(preferences.data.first()[FILTERS_HIDDEN_KEY]).isTrue()
-    }
-
-    @Test
-    fun `повторный toggleFilters разворачивает блок и снимает флаг`() = collapseTest {
-        viewModel.toggleFilters()
-        awaitFiltersHidden(true)
-
+    fun `toggleFilters разворачивает свёрнутый блок и сохраняет выбор`() = collapseTest {
         viewModel.toggleFilters()
         awaitFiltersHidden(false)
 
         assertThat(viewModel.filtersHidden.value).isFalse()
-        // Не «удалили ключ», а сохранили false: следующий запуск тоже увидит развёрнутый блок.
+        // Персистентность проверяется чтением хранилища, а не полем ViewModel.
         assertThat(settings.observeFiltersHidden().first()).isFalse()
         assertThat(preferences.data.first()[FILTERS_HIDDEN_KEY]).isFalse()
     }
 
     @Test
-    fun `свёрнутость переживает перезапуск экрана`() = collapseTest {
+    fun `повторный toggleFilters сворачивает блок обратно`() = collapseTest {
+        viewModel.toggleFilters()
+        awaitFiltersHidden(false)
+
         viewModel.toggleFilters()
         awaitFiltersHidden(true)
+
+        assertThat(viewModel.filtersHidden.value).isTrue()
+        // Не «удалили ключ», а сохранили true: следующий запуск тоже увидит свёрнутый блок.
+        assertThat(settings.observeFiltersHidden().first()).isTrue()
+        assertThat(preferences.data.first()[FILTERS_HIDDEN_KEY]).isTrue()
+    }
+
+    @Test
+    fun `развёрнутый блок переживает перезапуск экрана`() = collapseTest {
+        viewModel.toggleFilters()
+        awaitFiltersHidden(false)
 
         // «Второй запуск»: новый экземпляр ViewModel на тех же SettingsStore и DataStore.
         val restarted = newViewModel()
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
             restarted.filtersHidden.collect {}
         }
-        awaitFiltersHidden(true, restarted)
+        awaitFiltersHidden(false, restarted)
 
-        assertThat(restarted.filtersHidden.value).isTrue()
+        assertThat(restarted.filtersHidden.value).isFalse()
         restarted.viewModelScope.cancel()
         advanceUntilIdle()
     }
@@ -128,25 +128,27 @@ class FilterCollapseTest {
     @Test
     fun `флаг хранится в DataStore, а не в памяти экрана`() = collapseTest {
         viewModel.toggleFilters()
-        awaitFiltersHidden(true)
+        awaitFiltersHidden(false)
 
         // Ещё один запуск — уже без общего экземпляра SettingsStore: читаем тот же DataStore.
         val restartedSettings = settingsStore(preferences)
 
-        assertThat(restartedSettings.observeFiltersHidden().first()).isTrue()
+        assertThat(restartedSettings.observeFiltersHidden().first()).isFalse()
     }
 
     @Test
-    fun `свёрнутый блок не сбрасывает выбранные фильтры`() = collapseTest {
+    fun `сворачивание блока не сбрасывает выбранные фильтры`() = collapseTest {
         viewModel.setStatusFilter(StatusFilter.COMPLETED)
         viewModel.toggleCategory("cat-a")
         // Статус + категория — два условия для строки «Отборы · 2».
         assertThat(viewModel.filter.value.activeCount()).isEqualTo(2)
 
+        // По умолчанию свёрнут: развернём и снова свернём — это только видимость блока.
+        viewModel.toggleFilters()
+        awaitFiltersHidden(false)
         viewModel.toggleFilters()
         awaitFiltersHidden(true)
 
-        // Сворачивание — только видимость блока: отбор и его счётчик остаются прежними.
         assertThat(viewModel.filter.value.status).isEqualTo(StatusFilter.COMPLETED)
         assertThat(viewModel.filter.value.categoryIds).containsExactly("cat-a")
         assertThat(viewModel.filter.value.activeCount()).isEqualTo(2)

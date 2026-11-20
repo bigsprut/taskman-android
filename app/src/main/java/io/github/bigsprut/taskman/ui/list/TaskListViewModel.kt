@@ -125,9 +125,12 @@ class TaskListViewModel(
     /**
      * Свёрнут ли блок фильтров (§5.3-Ф1): состояние переживает перезапуск приложения,
      * поэтому живёт в DataStore, а не в `rememberSaveable`.
+     *
+     * Стартовое значение `true` (свёрнут) — как и умолчание в хранилище: иначе первый кадр
+     * показывал развёрнутые фильтры, пока DataStore не ответит, и экран «прыгал».
      */
     val filtersHidden: StateFlow<Boolean> = settings.observeFiltersHidden()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS), false)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS), true)
 
     val rows: StateFlow<List<TaskRowItem>> = combine(
         combine(tasks, _filter, _expandedParents) { tasks, filter, expanded ->

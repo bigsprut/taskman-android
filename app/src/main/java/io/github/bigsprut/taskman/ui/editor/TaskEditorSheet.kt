@@ -29,7 +29,6 @@ import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
@@ -84,6 +83,7 @@ import io.github.bigsprut.taskman.domain.Task
 import io.github.bigsprut.taskman.domain.TaskDraft
 import io.github.bigsprut.taskman.domain.TaskStatus
 import io.github.bigsprut.taskman.ui.common.CategoryDot
+import io.github.bigsprut.taskman.ui.common.SwipeToDeleteRow
 import io.github.bigsprut.taskman.ui.common.labelRes
 import io.github.bigsprut.taskman.ui.markdown.MarkdownText
 import java.time.Instant
@@ -173,7 +173,9 @@ fun TaskEditorSheet(
             }
 
             LazyColumn(
-                modifier = Modifier.weight(1f),
+                modifier = Modifier
+                    .weight(1f)
+                    .testTag(EditorTestTags.CONTENT),
                 contentPadding = PaddingValues(
                     start = 16.dp,
                     end = 16.dp,
@@ -603,43 +605,45 @@ private fun SubtaskRow(
         if (!edited) title = task.title
     }
 
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
+    SwipeToDeleteRow(
+        title = stringResource(R.string.editor_subtask_delete_title),
+        text = stringResource(R.string.editor_subtask_delete_text, task.title),
+        confirmLabel = stringResource(R.string.common_delete),
+        cancelLabel = stringResource(R.string.common_cancel),
+        onDelete = { onDelete(task.id) },
     ) {
-        Checkbox(
-            checked = task.status == TaskStatus.COMPLETED,
-            onCheckedChange = { checked -> onToggle(task.id, checked) },
-        )
-        OutlinedTextField(
-            value = title,
-            onValueChange = {
-                title = it
-                edited = true
-            },
-            modifier = Modifier
-                .weight(1f)
-                .onFocusChanged { focusState ->
-                    if (!focusState.isFocused && edited) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Checkbox(
+                checked = task.status == TaskStatus.COMPLETED,
+                onCheckedChange = { checked -> onToggle(task.id, checked) },
+            )
+            OutlinedTextField(
+                value = title,
+                onValueChange = {
+                    title = it
+                    edited = true
+                },
+                modifier = Modifier
+                    .weight(1f)
+                    .onFocusChanged { focusState ->
+                        if (!focusState.isFocused && edited) {
+                            edited = false
+                            onRename(task.id, title)
+                        }
+                    },
+                singleLine = true,
+                textStyle = MaterialTheme.typography.bodyMedium,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(
+                    onDone = {
                         edited = false
+                        focusManager.clearFocus()
                         onRename(task.id, title)
-                    }
-                },
-            singleLine = true,
-            textStyle = MaterialTheme.typography.bodyMedium,
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-            keyboardActions = KeyboardActions(
-                onDone = {
-                    edited = false
-                    focusManager.clearFocus()
-                    onRename(task.id, title)
-                },
-            ),
-        )
-        IconButton(onClick = { onDelete(task.id) }) {
-            Icon(
-                imageVector = Icons.Filled.Delete,
-                contentDescription = stringResource(R.string.editor_subtask_delete),
+                    },
+                ),
             )
         }
     }
@@ -707,7 +711,14 @@ private fun AttachmentRow(
     onDelete: () -> Unit,
 ) {
     val openLabel = stringResource(R.string.editor_attachment_open)
-    Row(
+    SwipeToDeleteRow(
+        title = stringResource(R.string.editor_attachment_delete_title),
+        text = stringResource(R.string.editor_attachment_delete_text, attachment.origName),
+        confirmLabel = stringResource(R.string.common_delete),
+        cancelLabel = stringResource(R.string.common_cancel),
+        onDelete = onDelete,
+    ) {
+        Row(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onOpen)
@@ -755,12 +766,6 @@ private fun AttachmentRow(
                 modifier = Modifier.size(20.dp),
             )
         }
-        IconButton(onClick = onDelete) {
-            Icon(
-                imageVector = Icons.Filled.Delete,
-                contentDescription = stringResource(R.string.editor_attachment_delete),
-                modifier = Modifier.size(20.dp),
-            )
         }
     }
 }
@@ -810,6 +815,9 @@ private const val KIB = 1024L
 object EditorTestTags {
     const val TITLE = "editor-title"
     const val NEW_SUBTASK = "editor-new-subtask"
+
+    /** Список полей листа: по нему UI-тест прокручивает редактор (Ф8). */
+    const val CONTENT = "editor-content"
 }
 /** Поле «Сотрудник»: показывает выбор и открывает лист-список (не чипы, §5.3-Ф2). */
 @Composable

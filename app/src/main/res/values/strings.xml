@@ -124,7 +124,6 @@
     <string name="editor_subtasks">Подзадачи</string>
     <string name="editor_subtask_new">Новая подзадача</string>
     <string name="editor_subtask_add">Добавить</string>
-    <string name="editor_subtask_delete">Удалить подзадачу</string>
     <string name="editor_done">Готово</string>
     <string name="editor_saving">Сохраняем…</string>
     <string name="editor_pick_date">Выбрать дату</string>
@@ -138,7 +137,6 @@
     <string name="editor_attachments">Вложения</string>
     <string name="editor_attachment_add_photo">Фото</string>
     <string name="editor_attachment_add_file">Файл</string>
-    <string name="editor_attachment_delete">Удалить вложение</string>
     <string name="editor_attachment_open">Открыть</string>
     <string name="editor_attachment_share">Поделиться</string>
     <string name="editor_attachment_empty">Вложений нет</string>
@@ -208,4 +206,9 @@
     <string name="filters_toggle_show">Показать отборы</string>
     <string name="filters_toggle_hide">Скрыть отборы</string>    <!-- Конфликт версий внутри редактора (Ф7) -->
     <string name="editor_conflict_inline">Задачу изменили на другом устройстве. Обновите данные — ваши правки не потеряны молча.</string>
-    <string name="editor_conflict_reload">Обновить</string></resources>
+    <string name="editor_conflict_reload">Обновить</string>    <!-- Свайп-удаление в редакторе (Ф8): видимых кнопок удаления нет -->
+    <string name="editor_subtask_delete_title">Удалить подзадачу?</string>
+    <string name="editor_subtask_delete_text">«%1$s» будет удалена.</string>
+    <string name="editor_attachment_delete_title">Удалить вложение?</string>
+    <string name="editor_attachment_delete_text">«%1$s» будет удалено с сервера.</string>
+    <string name="common_delete">Удалить</string></resources>

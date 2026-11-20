@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -102,6 +103,10 @@ fun SettingsContent(
     Column(
         modifier = modifier
             .fillMaxSize()
+            // 20.11: клавиатура. Без imePadding поле «Имя сотрудника» и кнопка
+            // «Добавить» уезжали под клавиатуру — набираешь имя, жмёшь туда, где
+            // кнопка была, а попадаешь по клавишам («сотрудники не добавляются»).
+            .imePadding()
             .verticalScroll(rememberScrollState())
             .padding(bottom = 24.dp),
     ) {

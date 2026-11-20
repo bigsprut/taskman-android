@@ -2,6 +2,7 @@ package io.github.bigsprut.taskman.ui.settings
 
 import android.content.ClipData
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,10 +16,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.AlertDialog
@@ -46,7 +46,6 @@ import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import io.github.bigsprut.taskman.BuildConfig
 import io.github.bigsprut.taskman.R
@@ -97,6 +96,9 @@ fun SettingsContent(
     var deleteTarget by rememberSaveable { mutableStateOf<String?>(null) }
     var editedTagId by rememberSaveable { mutableStateOf<String?>(null) }
     var editedCategoryId by rememberSaveable { mutableStateOf<String?>(null) }
+    // 20.11: добавление в справочник — как добавление задачи: не поле прямо в списке,
+    // а явное действие («+» в строке) → диалог с формой. Один паттерн на всё приложение.
+    var addTarget by rememberSaveable { mutableStateOf<String?>(null) }
     var deletedCatalogName by rememberSaveable { mutableStateOf<String?>(null) }
     var deletedCatalogKind by rememberSaveable { mutableStateOf<String?>(null) }
 
@@ -179,10 +181,9 @@ fun SettingsContent(
                 },
             )
         }
-        AddRow(
+        AddListItem(
             label = stringResource(R.string.settings_tag_add),
-            inputLabel = stringResource(R.string.settings_catalog_title),
-            onAdd = { title -> onAddTag(title, null) },
+            onClick = { addTarget = KIND_TAG },
         )
 
         HorizontalDivider()
@@ -203,10 +204,9 @@ fun SettingsContent(
                 },
             )
         }
-        AddRow(
+        AddListItem(
             label = stringResource(R.string.settings_category_add),
-            inputLabel = stringResource(R.string.settings_catalog_title),
-            onAdd = { title -> onAddCategory(title, null) },
+            onClick = { addTarget = KIND_CATEGORY },
         )
 
         HorizontalDivider()
@@ -290,10 +290,9 @@ fun SettingsContent(
             HorizontalDivider()
         }
 
-        AddRow(
+        AddListItem(
             label = stringResource(R.string.settings_employee_add),
-            inputLabel = stringResource(R.string.settings_employee_name),
-            onAdd = onAddEmployee,
+            onClick = { addTarget = KIND_EMPLOYEE },
         )
 
         HorizontalDivider()
@@ -377,6 +376,44 @@ fun SettingsContent(
                 editedCategoryId = null
             },
             onDismiss = { editedCategoryId = null },
+        )
+    }
+
+    // Добавление в справочник: тот же диалог, что и редактирование (один паттерн с задачей —
+    // явное действие открывает форму, а не поле, спрятанное в списке).
+    when (addTarget) {
+        KIND_TAG -> CatalogItemDialog(
+            title = stringResource(R.string.settings_tag_new),
+            initialTitle = "",
+            confirmLabel = stringResource(R.string.common_add),
+            onConfirm = { title, color ->
+                onAddTag(title, color)
+                addTarget = null
+            },
+            onDismiss = { addTarget = null },
+        )
+
+        KIND_CATEGORY -> CatalogItemDialog(
+            title = stringResource(R.string.settings_category_new),
+            initialTitle = "",
+            confirmLabel = stringResource(R.string.common_add),
+            onConfirm = { title, color ->
+                onAddCategory(title, color)
+                addTarget = null
+            },
+            onDismiss = { addTarget = null },
+        )
+
+        KIND_EMPLOYEE -> CatalogItemDialog(
+            title = stringResource(R.string.settings_employee_new),
+            initialTitle = "",
+            showColor = false,
+            confirmLabel = stringResource(R.string.common_add),
+            onConfirm = { name, _ ->
+                onAddEmployee(name)
+                addTarget = null
+            },
+            onDismiss = { addTarget = null },
         )
     }
 
@@ -488,52 +525,23 @@ private fun CatalogRow(
     HorizontalDivider()
 }
 
-/** Строка добавления в справочник: поле и кнопка. */
+/** Строка добавления в справочник: пункт списка с «+», открывает диалог с формой. */
 @Composable
-private fun AddRow(
-    label: String,
-    inputLabel: String,
-    onAdd: (String) -> Unit,
-) {
-    var name by rememberSaveable { mutableStateOf("") }
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        OutlinedTextField(
-            value = name,
-            onValueChange = { name = it },
-            modifier = Modifier.weight(1f),
-            label = { Text(inputLabel) },
-            singleLine = true,
-            textStyle = MaterialTheme.typography.bodyMedium,
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-            keyboardActions = KeyboardActions(
-                onDone = {
-                    if (name.isNotBlank()) {
-                        onAdd(name)
-                        name = ""
-                    }
-                },
-            ),
-        )
-        Button(
-            onClick = {
-                if (name.isNotBlank()) {
-                    onAdd(name)
-                    name = ""
-                }
-            },
-            enabled = name.isNotBlank(),
-        ) {
-            Text(label)
-            Spacer(Modifier.width(4.dp))
-        }
-    }
+private fun AddListItem(label: String, onClick: () -> Unit) {
+    ListItem(
+        headlineContent = {
+            Text(label, color = MaterialTheme.colorScheme.primary)
+        },
+        leadingContent = {
+            Icon(
+                imageVector = Icons.Filled.Add,
+                contentDescription = null,
+                modifier = Modifier.size(20.dp),
+                tint = MaterialTheme.colorScheme.primary,
+            )
+        },
+        modifier = Modifier.clickable(onClick = onClick),
+    )
 }
 
 /** Диалог создания/переименования элемента справочника (заголовок + цвет). */
@@ -617,3 +625,4 @@ private const val CLIP_LABEL = "taskman-device-id"
 /** Какой справочник удаляем: тег или категорию (диалог подтверждения общий). */
 private const val KIND_TAG = "tag"
 private const val KIND_CATEGORY = "category"
+private const val KIND_EMPLOYEE = "employee"

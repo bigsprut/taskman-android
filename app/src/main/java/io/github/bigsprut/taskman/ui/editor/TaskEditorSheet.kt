@@ -116,6 +116,11 @@ fun TaskEditorSheet(
     ModalBottomSheet(
         onDismissRequest = viewModel::close,
         sheetState = sheetState,
+        // 20.11: шторка НЕ перехватывает вертикальные жесты. Редактор — почти
+        // полноэкранная форма со своим LazyColumn: когда список докручен до конца,
+        // остаток жеста уходил в шторку и она «пружинила» вместе со списком —
+        // содержимое дёргалось вверх-вниз. Закрытие: крестик, тап по фону, Back.
+        sheetGesturesEnabled = false,
         modifier = modifier,
     ) {
         Column(

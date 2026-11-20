@@ -1,9 +1,6 @@
 package io.github.bigsprut.taskman.ui.common
 
 import androidx.annotation.StringRes
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.graphics.Color
 import io.github.bigsprut.taskman.R
 import io.github.bigsprut.taskman.domain.StatusFilter
 import io.github.bigsprut.taskman.domain.TaskStatus
@@ -17,17 +14,6 @@ fun TaskStatus.labelRes(): Int = when (this) {
     TaskStatus.CANCELED -> R.string.status_canceled
 }
 
-/**
- * Цвет подписи статуса из темы: цветной текст на залитом фоне не используется,
- * поэтому контраст гарантирован цветами Material 3.
- */
-@Composable
-fun TaskStatus.labelColor(): Color = when (this) {
-    TaskStatus.IN_PROGRESS -> MaterialTheme.colorScheme.primary
-    TaskStatus.CREATED -> MaterialTheme.colorScheme.onSurfaceVariant
-    TaskStatus.COMPLETED -> MaterialTheme.colorScheme.tertiary
-    TaskStatus.CANCELED -> MaterialTheme.colorScheme.error
-}
 
 /** Подпись чипа фильтра по статусу (§5.3-Ф1). */
 @StringRes

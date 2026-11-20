@@ -7,7 +7,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -23,7 +25,9 @@ import io.github.bigsprut.taskman.domain.Tag
 import io.github.bigsprut.taskman.domain.TaskCounts
 import io.github.bigsprut.taskman.domain.TaskFilter
 import io.github.bigsprut.taskman.ui.common.CategoryDot
+import io.github.bigsprut.taskman.ui.common.colorFamily
 import io.github.bigsprut.taskman.ui.common.labelRes
+import io.github.bigsprut.taskman.ui.common.statusColorsFor
 
 /**
  * Шапка фильтров (§5.3-Ф1): три группы чипов — статус, категории, теги.
@@ -53,6 +57,10 @@ fun TaskFilterHeader(
             FilterGroupLabel(stringResource(R.string.filter_status_label))
             ChipRow {
                 StatusFilter.entries.forEach { status ->
+                    // Цветокод §5.2: заливка выбранного чипа и акцент невыбранного — из единой
+                    // палитры статусов; счётчик внутри подписи красится тем же цветом.
+                    val palette = status.colorFamily()
+                        ?.let { family -> statusColorsFor(family, isSystemInDarkTheme()) }
                     FilterChip(
                         selected = filter.status == status,
                         onClick = { onStatusChange(status) },
@@ -63,6 +71,15 @@ fun TaskFilterHeader(
                                     stringResource(status.labelRes()),
                                     counts.forStatus(status),
                                 ),
+                            )
+                        },
+                        colors = if (palette == null) {
+                            FilterChipDefaults.filterChipColors()
+                        } else {
+                            FilterChipDefaults.filterChipColors(
+                                labelColor = palette.accent,
+                                selectedContainerColor = palette.container,
+                                selectedLabelColor = palette.content,
                             )
                         },
                     )
